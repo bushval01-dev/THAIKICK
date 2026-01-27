@@ -1,7 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || ''; // Ensure this is set in your environment
-const ai = new GoogleGenAI({ apiKey });
+const apiKey = process.env.API_KEY || '';
+let ai: GoogleGenAI | null = null;
+
+const getAiClient = () => {
+  if (!apiKey) return null;
+  if (!ai) {
+    ai = new GoogleGenAI({ apiKey });
+  }
+  return ai;
+};
 
 const SYSTEM_INSTRUCTION = `
 You are 'Kru AI', a friendly and knowledgeable concierge for THAIKICK, a Muay Thai booking platform.
@@ -22,14 +30,16 @@ export const chatWithGemini = async (
   history: { role: 'user' | 'model'; parts: { text: string }[] }[]
 ) => {
   try {
-    if (!apiKey) {
-      return "I'm sorry, I'm currently offline (API Key missing). Please try again later.";
+    const client = getAiClient();
+    if (!client) {
+      console.warn("Gemini API Key is missing.");
+      return "I'm sorry, I'm currently offline (API Key missing). Please check your configuration.";
     }
 
-    const model = 'gemini-3-flash-preview'; // Optimized for speed/chat
-    
+    const model = 'gemini-1.5-flash'; // Updated to a standard model name if preview is unstable, or keep as is. Let's use 1.5-flash which is generally available.
+
     // Construct history for the stateless request or use chat session
-    const chat = ai.chats.create({
+    const chat = client.chats.create({
       model: model,
       history: history,
       config: {
@@ -37,7 +47,7 @@ export const chatWithGemini = async (
       }
     });
 
-    const result = await chat.sendMessage({ message });
+    const result = await chat.sendMessage(message);
     return result.text;
 
   } catch (error) {

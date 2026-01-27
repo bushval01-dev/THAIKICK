@@ -35,7 +35,7 @@ const Mono: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications, handleApprove }) => {
   // We use local state for specific admin-only view toggles if needed, 
   // but mostly rely on props for the shared application state.
-  
+
   const totalRevenue = bookings.reduce((sum, b) => sum + b.totalPrice, 0);
   const totalCommission = bookings.reduce((sum, b) => sum + b.commissionAmount, 0);
 
@@ -70,7 +70,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
           <Users className="w-8 h-8 text-gray-200" />
         </div>
         <div className="bg-white border-2 border-brand-charcoal p-6 flex items-center justify-between">
-           <div>
+          <div>
             <Mono className="text-brand-blue">Pending Requests</Mono>
             <div className="text-3xl font-black mt-2">{applications.length}</div>
           </div>
@@ -81,7 +81,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         {/* Left Column: Actions */}
         <div className="space-y-12">
-          
+
           {/* Affiliate Approval Section */}
           <BlockTable title="Pending Affiliates" icon={<Users className="w-4 h-4" />}>
             {applications.length === 0 ? (
@@ -92,19 +92,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                   <div key={app.id} className="p-6 bg-white hover:bg-gray-50 transition-colors">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 bg-brand-bone border border-brand-charcoal flex items-center justify-center font-bold text-xs">
-                           {app.userName.charAt(0)}
-                         </div>
-                         <div>
-                           <div className="font-black text-sm uppercase text-brand-charcoal">{app.userName}</div>
-                           <Mono className="text-gray-400">ID: {app.id}</Mono>
-                         </div>
+                        <div className="w-8 h-8 bg-brand-bone border border-brand-charcoal flex items-center justify-center font-bold text-xs">
+                          {app.userName.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-black text-sm uppercase text-brand-charcoal">{app.userName}</div>
+                          <Mono className="text-gray-400">ID: {app.id}</Mono>
+                        </div>
                       </div>
                       <div className="bg-brand-blue text-white text-[10px] font-bold px-2 py-1 uppercase tracking-wider">
                         Action Reqd
                       </div>
                     </div>
-                    
+
                     <div className="mb-6 pl-11">
                       <p className="font-mono text-xs text-brand-blue mb-1 uppercase font-bold">Statement:</p>
                       <p className="text-sm text-gray-600 font-mono bg-brand-bone p-3 border border-gray-200 italic">
@@ -113,14 +113,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                     </div>
 
                     <div className="flex gap-4 pl-11">
-                      <button 
-                        onClick={() => handleApprove(app.id, true)} 
+                      <button
+                        onClick={() => handleApprove(app.id, true)}
                         className="flex-1 bg-brand-charcoal text-white font-bold uppercase text-xs py-3 hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
                       >
                         <Check className="w-4 h-4" /> Approve
                       </button>
-                      <button 
-                        onClick={() => handleApprove(app.id, false)} 
+                      <button
+                        onClick={() => handleApprove(app.id, false)}
                         className="flex-1 border-2 border-brand-charcoal text-brand-charcoal font-bold uppercase text-xs py-3 hover:bg-brand-red hover:text-white hover:border-brand-red transition-colors flex items-center justify-center gap-2"
                       >
                         <X className="w-4 h-4" /> Deny
@@ -132,8 +132,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
             )}
           </BlockTable>
 
-           {/* User Registry (Read-only from auth-data) */}
-           <BlockTable title="User Registry (Auth Data)" icon={<Shield className="w-4 h-4" />}>
+          {/* User Registry (Read-only from auth-data) */}
+          <BlockTable title="User Registry (Auth Data)" icon={<Shield className="w-4 h-4" />}>
             <div className="max-h-[300px] overflow-y-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-brand-bone font-mono text-xs font-bold text-brand-blue uppercase sticky top-0">
@@ -152,10 +152,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                       </td>
                       <td className="p-4 uppercase text-gray-600">{user.role}</td>
                       <td className="p-4 text-right">
-                        <span className={`px-2 py-1 border ${
-                          user.affiliateStatus === 'active' ? 'border-green-600 text-green-700 bg-green-50' : 
-                          user.affiliateStatus === 'pending' ? 'border-brand-blue text-brand-blue bg-blue-50' : 'border-gray-200 text-gray-400'
-                        }`}>
+                        <span className={`px-2 py-1 border ${user.affiliateStatus === 'active' ? 'border-green-600 text-green-700 bg-green-50' :
+                            user.affiliateStatus === 'pending' ? 'border-brand-blue text-brand-blue bg-blue-50' : 'border-gray-200 text-gray-400'
+                          }`}>
                           {user.affiliateStatus}
                         </span>
                       </td>
@@ -164,7 +163,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                 </tbody>
               </table>
             </div>
-           </BlockTable>
+          </BlockTable>
 
         </div>
 
@@ -172,47 +171,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
         <div className="space-y-12">
           {/* Booking Ledger */}
           <BlockTable title="Transaction Ledger" icon={<Activity className="w-4 h-4" />}>
-              {bookings.length === 0 ? (
-                 <div className="p-8 text-center font-mono text-sm text-gray-400">NO TRANSACTIONS</div>
-              ) : (
-                <div className="divide-y-2 divide-gray-100">
-                   {bookings.slice().reverse().map(b => (
-                     <div key={b.id} className="p-4 hover:bg-gray-50 transition-colors">
-                       <div className="flex justify-between items-center mb-2">
-                         <span className="font-mono text-xs text-gray-400">{b.date}</span>
-                         <span className={`font-mono text-[10px] font-bold px-2 uppercase ${b.status === 'completed' ? 'text-green-600 bg-green-50' : 'text-brand-blue bg-blue-50'}`}>
-                           {b.status}
-                         </span>
-                       </div>
-                       <div className="flex justify-between items-center">
-                         <div>
-                            <div className="font-bold text-sm text-brand-charcoal uppercase">{b.gymName}</div>
-                            <div className="font-mono text-xs text-gray-500">User: {b.userName.split(' ')[0]}</div>
-                         </div>
-                         <div className="text-right">
-                            <div className="font-black text-brand-charcoal">฿{b.totalPrice}</div>
-                            {b.commissionAmount > 0 && (
-                              <div className="font-mono text-[10px] text-brand-red">
-                                Comm: ฿{b.commissionAmount}
-                              </div>
-                            )}
-                         </div>
-                       </div>
-                     </div>
-                   ))}
-                </div>
-              )}
+            {bookings.length === 0 ? (
+              <div className="p-8 text-center font-mono text-sm text-gray-400">NO TRANSACTIONS</div>
+            ) : (
+              <div className="divide-y-2 divide-gray-100">
+                {bookings.slice().reverse().map(b => (
+                  <div key={b.id} className="p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-mono text-xs text-gray-400">{b.date}</span>
+                      <span className={`font-mono text-[10px] font-bold px-2 uppercase ${b.status === 'completed' ? 'text-green-600 bg-green-50' : 'text-brand-blue bg-blue-50'}`}>
+                        {b.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-sm text-brand-charcoal uppercase">{b.gymName}</div>
+                        <div className="font-mono text-xs text-gray-500">User: {b.userName.split(' ')[0]}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-black text-brand-charcoal">฿{b.totalPrice}</div>
+                        {b.commissionAmount > 0 && (
+                          <div className="font-mono text-[10px] text-brand-red">
+                            Comm: ฿{b.commissionAmount}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </BlockTable>
 
-           {/* System Logs (Static) */}
-           <div className="bg-brand-charcoal text-gray-400 p-6 border-2 border-brand-charcoal font-mono text-[10px] space-y-2">
-             <div className="text-white font-bold border-b border-gray-600 pb-2 mb-2">SYSTEM LOGS</div>
-             <p>> [SYSTEM] Initialized 3 Gym nodes</p>
-             <p>> [SYSTEM] Loaded {USERS.length} user profiles from auth-data</p>
-             <p>> [AFFILIATE] Tracking cookie expiry set to 30 days</p>
-             <p>> [BOT] Kru AI agent connected successfully</p>
-             <p className="animate-pulse">> [MONITOR] Watching for new bookings...</p>
-           </div>
+          {/* System Logs (Static) */}
+          <div className="bg-brand-charcoal text-gray-400 p-6 border-2 border-brand-charcoal font-mono text-[10px] space-y-2">
+            <div className="text-white font-bold border-b border-gray-600 pb-2 mb-2">SYSTEM LOGS</div>
+            <p>&gt; [SYSTEM] Initialized 3 Gym nodes</p>
+            <p>&gt; [SYSTEM] Loaded {USERS.length} user profiles from auth-data</p>
+            <p>&gt; [AFFILIATE] Tracking cookie expiry set to 30 days</p>
+            <p>&gt; [BOT] Kru AI agent connected successfully</p>
+            <p className="animate-pulse">&gt; [MONITOR] Watching for new bookings...</p>
+          </div>
         </div>
       </div>
     </div>
