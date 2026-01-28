@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Shield, Check, X, Users, DollarSign, Activity } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus } from 'lucide-react';
 import { USERS } from '../lib/auth-data';
-import { Booking, AffiliateApplication } from '../lib/types';
+import { Booking, AffiliateApplication, Announcement, Gym, Trainer } from '../lib/types';
+import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer } from '../services/dataService';
 
 interface AdminDashboardProps {
   bookings: Booking[];
@@ -9,10 +11,10 @@ interface AdminDashboardProps {
   handleApprove: (id: string, ok: boolean) => void;
 }
 
-// Internal Sub-components for structure
-const BlockTable: React.FC<{ title: string; icon?: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
-  <div className="border-2 border-brand-charcoal bg-white h-full">
-    <div className="p-4 border-b-2 border-brand-charcoal bg-brand-bone flex justify-between items-center">
+// Internal Sub-components
+const BlockTable: React.FC<{ title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, icon, children, className = "" }) => (
+  <div className={`border-2 border-brand-charcoal bg-white flex flex-col ${className}`}>
+    <div className="p-4 border-b-2 border-brand-charcoal bg-brand-bone flex justify-between items-center shrink-0">
       <h3 className="font-black uppercase tracking-wide text-sm flex items-center gap-2">
         {icon}
         {title}
@@ -22,7 +24,7 @@ const BlockTable: React.FC<{ title: string; icon?: React.ReactNode; children: Re
         <div className="w-2 h-2 border border-brand-charcoal"></div>
       </div>
     </div>
-    <div>{children}</div>
+    <div className="flex-1 overflow-hidden flex flex-col">{children}</div>
   </div>
 );
 
@@ -33,86 +35,401 @@ const Mono: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
 );
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications, handleApprove }) => {
-  // We use local state for specific admin-only view toggles if needed, 
-  // but mostly rely on props for the shared application state.
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [newsTitle, setNewsTitle] = useState("");
+  const [newsContent, setNewsContent] = useState("");
+  const [isPosting, setIsPosting] = useState(false);
+
+  const [gyms, setGyms] = useState<Gym[]>([]);
+  const [editingGym, setEditingGym] = useState<Partial<Gym> | null>(null);
+  const [isGymFormOpen, setIsGymFormOpen] = useState(false);
+
+  // Trainer Form State
+  const [newTrainer, setNewTrainer] = useState<Partial<Trainer>>({ name: '', specialty: '', pricePerSession: 500, image: '' });
+
+  useEffect(() => {
+    loadNews();
+    loadGyms();
+  }, []);
+
+  const loadGyms = async () => {
+    const data = await getGyms();
+    setGyms(data);
+  };
+
+  const handleSaveGym = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGym) return;
+
+    try {
+      if (editingGym.id) {
+        await updateGym(editingGym.id, editingGym);
+      } else {
+        await createGym(editingGym);
+      }
+      setIsGymFormOpen(false);
+      setEditingGym(null);
+      await loadGyms();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save gym");
+    }
+  };
+
+  const handleDeleteGym = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this gym?")) return;
+    try {
+      await deleteGym(id);
+      await loadGyms();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete gym");
+    }
+  };
+
+  const handleAddTrainer = async () => {
+    if (!editingGym?.id || !newTrainer.name || !newTrainer.specialty) return alert("Fill in name and specialty");
+    try {
+      await createTrainer({ ...newTrainer, gymId: editingGym.id });
+      setNewTrainer({ name: '', specialty: '', pricePerSession: 500, image: '' }); // Reset
+      // Refresh Gyms to show new trainer (since fetching gyms also fetches trainers)
+      await loadGyms();
+      // Also update local editingGym state if we want to show it immediately without re-opening?
+      // Actually loadGyms updates 'gyms', but we need to update the object currently being edited to reflect changes if strictly checking local state.
+      // But typically we re-fetch. Let's just re-fetch and find the gym again to update editingGym view if needed.
+      const updatedGyms = await getGyms();
+      const currentGym = updatedGyms.find(g => g.id === editingGym.id);
+      if (currentGym) setEditingGym(currentGym);
+
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add trainer");
+    }
+  };
+
+  const handleDeleteTrainer = async (trainerId: string) => {
+    if (!confirm("Remove this trainer?")) return;
+    try {
+      await deleteTrainer(trainerId);
+      await loadGyms();
+      // Refresh local editing state
+      const updatedGyms = await getGyms();
+      if (editingGym?.id) {
+        const currentGym = updatedGyms.find(g => g.id === editingGym.id);
+        if (currentGym) setEditingGym(currentGym);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadNews = async () => {
+    const data = await getAnnouncements();
+    setAnnouncements(data);
+  };
+
+  const handlePostNews = async () => {
+    if (!newsTitle || !newsContent) return alert("Fill in all fields");
+    setIsPosting(true);
+    try {
+      await createAnnouncement(newsTitle, newsContent);
+      setNewsTitle("");
+      setNewsContent("");
+      await loadNews();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to post news");
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handleDeleteNews = async (id: string) => {
+    if (!confirm("Delete this news item?")) return;
+    try {
+      await deleteAnnouncement(id);
+      await loadNews();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const totalRevenue = bookings.reduce((sum, b) => sum + b.totalPrice, 0);
   const totalCommission = bookings.reduce((sum, b) => sum + b.commissionAmount, 0);
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 sm:px-10 py-12 animate-reveal">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-10 py-12 animate-reveal min-h-[80vh]">
       {/* Header */}
-      <div className="mb-12 border-b-2 border-brand-charcoal pb-6 flex justify-between items-end">
+      <div className="mb-12 border-b-2 border-brand-charcoal pb-6 flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
           <Mono className="text-brand-blue">System Administration</Mono>
-          <h1 className="text-4xl font-black uppercase text-brand-charcoal mt-2">Overseer Console</h1>
+          <h1 className="text-3xl md:text-4xl font-black uppercase text-brand-charcoal mt-2">Overseer Console</h1>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-brand-charcoal text-white font-mono text-xs font-bold uppercase">
+        <div className="flex items-center gap-2 px-4 py-2 bg-brand-charcoal text-white font-mono text-xs font-bold uppercase w-fit">
           <Shield className="w-4 h-4" />
           Master Access
         </div>
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
         <div className="bg-white border-2 border-brand-charcoal p-6 flex items-center justify-between">
           <div>
             <Mono className="text-brand-blue">Total Platform Revenue</Mono>
-            <div className="text-3xl font-black mt-2">฿{totalRevenue.toLocaleString()}</div>
+            <div className="text-2xl md:text-3xl font-black mt-2">฿{totalRevenue.toLocaleString()}</div>
           </div>
           <DollarSign className="w-8 h-8 text-gray-200" />
         </div>
         <div className="bg-white border-2 border-brand-charcoal p-6 flex items-center justify-between">
           <div>
             <Mono className="text-brand-blue">Affiliate Payouts</Mono>
-            <div className="text-3xl font-black mt-2">฿{totalCommission.toLocaleString()}</div>
+            <div className="text-2xl md:text-3xl font-black mt-2">฿{totalCommission.toLocaleString()}</div>
           </div>
           <Users className="w-8 h-8 text-gray-200" />
         </div>
         <div className="bg-white border-2 border-brand-charcoal p-6 flex items-center justify-between">
           <div>
             <Mono className="text-brand-blue">Pending Requests</Mono>
-            <div className="text-3xl font-black mt-2">{applications.length}</div>
+            <div className="text-2xl md:text-3xl font-black mt-2">{applications.length}</div>
           </div>
           <Activity className="w-8 h-8 text-brand-red animate-pulse" />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-12 pb-12">
         {/* Left Column: Actions */}
-        <div className="space-y-12">
+        <div className="space-y-12 min-w-0">
+
+          {/* New Section: News Management */}
+          <BlockTable title="Broadcast News" icon={<Megaphone className="w-4 h-4" />}>
+            <div className="p-6 border-b-2 border-gray-100 bg-gray-50">
+              <input
+                className="w-full bg-white border border-gray-300 p-3 mb-2 font-mono text-sm"
+                placeholder="HEADLINE..."
+                value={newsTitle}
+                onChange={e => setNewsTitle(e.target.value)}
+              />
+              <textarea
+                className="w-full bg-white border border-gray-300 p-3 mb-4 font-mono text-sm h-20"
+                placeholder="Your announcement content..."
+                value={newsContent}
+                onChange={e => setNewsContent(e.target.value)}
+              ></textarea>
+              <button
+                onClick={handlePostNews}
+                disabled={isPosting}
+                className="w-full bg-brand-charcoal text-white font-bold uppercase py-3 hover:bg-brand-blue transition-colors disabled:opacity-50"
+              >
+                {isPosting ? 'Publishing...' : 'Publish Announcement'}
+              </button>
+            </div>
+
+            <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
+              {announcements.map(a => (
+                <div key={a.id} className="p-4 flex justify-between items-start hover:bg-brand-bone transition-colors group">
+                  <div>
+                    <div className="font-black uppercase text-sm">{a.title}</div>
+                    <p className="font-mono text-xs text-gray-500 truncate max-w-[200px]">{a.content}</p>
+                    <span className="text-[10px] text-gray-400">{new Date(a.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <button onClick={() => handleDeleteNews(a.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {announcements.length === 0 && <div className="p-4 text-center text-xs text-gray-400 font-mono">No active announcements</div>}
+            </div>
+          </BlockTable>
+
+          {/* Gym Management */}
+          <BlockTable title="Gym Inventory" icon={<Activity className="w-4 h-4" />}>
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <span className="font-mono text-xs text-gray-500">{gyms.length} Active Listings</span>
+              <button
+                onClick={() => { setEditingGym({}); setIsGymFormOpen(true); }}
+                className="bg-brand-charcoal text-white px-3 py-1 font-mono text-xs font-bold uppercase flex items-center gap-2 hover:bg-brand-blue"
+              >
+                <Plus className="w-3 h-3" /> Add Gym
+              </button>
+            </div>
+
+            {isGymFormOpen && (
+              <div className="p-6 bg-brand-bone border-b-2 border-brand-charcoal">
+                <form onSubmit={handleSaveGym} className="space-y-4">
+                  <div className="p-2 bg-gray-100 rounded mb-2 border border-gray-200">
+                    <h4 className="font-mono text-xs font-bold uppercase text-brand-charcoal mb-2 border-b border-gray-300 pb-1">Gym Info</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <input
+                        className="border p-2 font-mono text-xs bg-white w-full"
+                        placeholder="Gym Name"
+                        value={editingGym?.name || ''}
+                        onChange={e => setEditingGym({ ...editingGym, name: e.target.value })}
+                        required
+                      />
+                      <input
+                        className="border p-2 font-mono text-xs bg-white w-full"
+                        placeholder="Image URL"
+                        value={editingGym?.images?.[0] || ''}
+                        onChange={e => setEditingGym({ ...editingGym, images: [e.target.value] })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <input
+                        className="border p-2 font-mono text-xs bg-white w-full"
+                        placeholder="Location"
+                        value={editingGym?.location || ''}
+                        onChange={e => setEditingGym({ ...editingGym, location: e.target.value })}
+                        required
+                      />
+                      <input
+                        className="border p-2 font-mono text-xs bg-white w-full"
+                        placeholder="Base Price (THB)"
+                        type="number"
+                        value={editingGym?.basePrice || ''}
+                        onChange={e => setEditingGym({ ...editingGym, basePrice: Number(e.target.value) })}
+                        required
+                      />
+
+                    </div>
+                    <textarea
+                      className="border p-2 font-mono text-xs bg-white w-full h-16 mt-2"
+                      placeholder="Description"
+                      value={editingGym?.description || ''}
+                      onChange={e => setEditingGym({ ...editingGym, description: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Trainer Management Section (Only if editing existing gym) */}
+                  {editingGym?.id && (
+                    <div className="p-2 bg-white rounded border border-gray-200">
+                      <h4 className="font-mono text-xs font-bold uppercase text-brand-charcoal mb-2 border-b border-gray-100 pb-1 flex justify-between items-center">
+                        <span>Trainer Roster ({editingGym.trainers?.length || 0})</span>
+                        <span className="text-[10px] text-gray-400">Add below</span>
+                      </h4>
+
+                      {/* List Existing Trainers */}
+                      <div className="space-y-2 mb-4 max-h-[150px] overflow-y-auto">
+                        {editingGym.trainers?.map((t: Trainer) => (
+                          <div key={t.id} className="flex justify-between items-center bg-gray-50 p-2 text-xs font-mono">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 bg-gray-200 rounded-full overflow-hidden">
+                                {t.image && <img src={t.image} className="w-full h-full object-cover" />}
+                              </div>
+                              <div>
+                                <div className="font-bold">{t.name}</div>
+                                <div className="text-[10px] text-gray-500">{t.specialty}</div>
+                              </div>
+                            </div>
+                            <button type="button" onClick={() => handleDeleteTrainer(t.id)} className="text-red-400 hover:text-red-600">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {(!editingGym.trainers || editingGym.trainers.length === 0) && <div className="text-center py-2 text-gray-300 text-[10px]">No trainers yet</div>}
+                      </div>
+
+                      {/* Add Trainer Inputs */}
+                      <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
+                        <div className="flex gap-2">
+                          <input
+                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                            placeholder="Name"
+                            value={newTrainer.name}
+                            onChange={e => setNewTrainer({ ...newTrainer, name: e.target.value })}
+                          />
+                          <input
+                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                            placeholder="Specialty (e.g. Boxing)"
+                            value={newTrainer.specialty}
+                            onChange={e => setNewTrainer({ ...newTrainer, specialty: e.target.value })}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                            placeholder="Price (+THB)"
+                            type="number"
+                            value={newTrainer.pricePerSession}
+                            onChange={e => setNewTrainer({ ...newTrainer, pricePerSession: Number(e.target.value) })}
+                          />
+                          <input
+                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                            placeholder="Image URL"
+                            value={newTrainer.image}
+                            onChange={e => setNewTrainer({ ...newTrainer, image: e.target.value })}
+                          />
+                          <button type="button" onClick={handleAddTrainer} className="bg-brand-blue text-white px-2 rounded hover:bg-blue-600 flex items-center justify-center">
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end pt-2 border-t border-brand-charcoal">
+                    <button type="button" onClick={() => setIsGymFormOpen(false)} className="px-4 py-2 font-mono text-xs font-bold uppercase hover:bg-gray-200">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-brand-charcoal text-white font-mono text-xs font-bold uppercase hover:bg-green-600">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
+              {gyms.map(g => (
+                <div key={g.id} className="p-4 flex justify-between items-center hover:bg-gray-50 group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-200 shrink-0 overflow-hidden border border-gray-300">
+                      {g.images?.[0] && <img src={g.images[0]} className="w-full h-full object-cover" />}
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm uppercase text-brand-charcoal">{g.name}</div>
+                      <div className="font-mono text-xs text-gray-400">{g.location} • ฿{g.basePrice}</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => { setEditingGym(g); setIsGymFormOpen(true); }} className="p-2 hover:bg-blue-100 text-brand-blue rounded">
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDeleteGym(g.id)} className="p-2 hover:bg-red-100 text-brand-red rounded">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </BlockTable>
 
           {/* Affiliate Approval Section */}
           <BlockTable title="Pending Affiliates" icon={<Users className="w-4 h-4" />}>
             {applications.length === 0 ? (
               <div className="p-8 text-center font-mono text-sm text-gray-400">NO PENDING APPLICATIONS</div>
             ) : (
-              <div className="divide-y-2 divide-gray-100">
+              <div className="divide-y-2 divide-gray-100 max-h-[400px] overflow-y-auto">
                 {applications.map(app => (
                   <div key={app.id} className="p-6 bg-white hover:bg-gray-50 transition-colors">
-                    <div className="flex justify-between items-start mb-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-2">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-brand-bone border border-brand-charcoal flex items-center justify-center font-bold text-xs">
+                        <div className="w-8 h-8 bg-brand-bone border border-brand-charcoal flex items-center justify-center font-bold text-xs shrink-0">
                           {app.userName.charAt(0)}
                         </div>
-                        <div>
-                          <div className="font-black text-sm uppercase text-brand-charcoal">{app.userName}</div>
-                          <Mono className="text-gray-400">ID: {app.id}</Mono>
+                        <div className="min-w-0">
+                          <div className="font-black text-sm uppercase text-brand-charcoal truncate">{app.userName}</div>
+                          <Mono className="text-gray-400 block truncate">ID: {app.id}</Mono>
                         </div>
                       </div>
-                      <div className="bg-brand-blue text-white text-[10px] font-bold px-2 py-1 uppercase tracking-wider">
+                      <div className="bg-brand-blue text-white text-[10px] font-bold px-2 py-1 uppercase tracking-wider shrink-0">
                         Action Reqd
                       </div>
                     </div>
 
-                    <div className="mb-6 pl-11">
+                    <div className="mb-6 pl-0 sm:pl-11">
                       <p className="font-mono text-xs text-brand-blue mb-1 uppercase font-bold">Statement:</p>
-                      <p className="text-sm text-gray-600 font-mono bg-brand-bone p-3 border border-gray-200 italic">
+                      <p className="text-sm text-gray-600 font-mono bg-brand-bone p-3 border border-gray-200 italic break-words">
                         "{app.reason}"
                       </p>
                     </div>
 
-                    <div className="flex gap-4 pl-11">
+                    <div className="flex gap-4 pl-0 sm:pl-11">
                       <button
                         onClick={() => handleApprove(app.id, true)}
                         className="flex-1 bg-brand-charcoal text-white font-bold uppercase text-xs py-3 hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
@@ -132,29 +449,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
             )}
           </BlockTable>
 
-          {/* User Registry (Read-only from auth-data) */}
+        </div>
+
+        {/* Right Column: Data */}
+        <div className="space-y-12 min-w-0">
+          {/* User Registry */}
           <BlockTable title="User Registry (Auth Data)" icon={<Shield className="w-4 h-4" />}>
-            <div className="max-h-[300px] overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-brand-bone font-mono text-xs font-bold text-brand-blue uppercase sticky top-0">
+            <div className="max-h-[400px] overflow-auto">
+              <table className="w-full text-left border-collapse min-w-[500px]">
+                <thead className="bg-brand-bone font-mono text-xs font-bold text-brand-blue uppercase sticky top-0 z-10 shadow-sm">
                   <tr>
-                    <th className="p-4 border-b-2 border-brand-charcoal">User</th>
-                    <th className="p-4 border-b-2 border-brand-charcoal">Role</th>
-                    <th className="p-4 border-b-2 border-brand-charcoal text-right">Affiliate</th>
+                    <th className="p-4 border-b-2 border-brand-charcoal bg-brand-bone">User</th>
+                    <th className="p-4 border-b-2 border-brand-charcoal bg-brand-bone">Role</th>
+                    <th className="p-4 border-b-2 border-brand-charcoal text-right bg-brand-bone">Affiliate</th>
                   </tr>
                 </thead>
                 <tbody className="font-mono text-xs">
                   {USERS.map(user => (
                     <tr key={user.id} className="border-b border-gray-100 hover:bg-brand-bone/50">
-                      <td className="p-4">
-                        <div className="font-bold text-brand-charcoal">{user.name}</div>
-                        <div className="text-gray-400">{user.email}</div>
+                      <td className="p-4 max-w-[200px]">
+                        <div className="font-bold text-brand-charcoal truncate" title={user.name}>{user.name}</div>
+                        <div className="text-gray-400 truncate" title={user.email}>{user.email}</div>
                       </td>
                       <td className="p-4 uppercase text-gray-600">{user.role}</td>
                       <td className="p-4 text-right">
-                        <span className={`px-2 py-1 border ${user.affiliateStatus === 'active' ? 'border-green-600 text-green-700 bg-green-50' :
-                            user.affiliateStatus === 'pending' ? 'border-brand-blue text-brand-blue bg-blue-50' : 'border-gray-200 text-gray-400'
-                          }`}>
+                        <span className={`px - 2 py - 1 border ${user.affiliateStatus === 'active' ? 'border-green-600 text-green-700 bg-green-50' :
+                          user.affiliateStatus === 'pending' ? 'border-brand-blue text-brand-blue bg-blue-50' : 'border-gray-200 text-gray-400'
+                          } `}>
                           {user.affiliateStatus}
                         </span>
                       </td>
@@ -165,30 +486,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
             </div>
           </BlockTable>
 
-        </div>
-
-        {/* Right Column: Data */}
-        <div className="space-y-12">
           {/* Booking Ledger */}
           <BlockTable title="Transaction Ledger" icon={<Activity className="w-4 h-4" />}>
             {bookings.length === 0 ? (
               <div className="p-8 text-center font-mono text-sm text-gray-400">NO TRANSACTIONS</div>
             ) : (
-              <div className="divide-y-2 divide-gray-100">
+              <div className="divide-y-2 divide-gray-100 max-h-[500px] overflow-y-auto">
                 {bookings.slice().reverse().map(b => (
                   <div key={b.id} className="p-4 hover:bg-gray-50 transition-colors">
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-mono text-xs text-gray-400">{b.date}</span>
-                      <span className={`font-mono text-[10px] font-bold px-2 uppercase ${b.status === 'completed' ? 'text-green-600 bg-green-50' : 'text-brand-blue bg-blue-50'}`}>
+                      <span className={`font - mono text - [10px] font - bold px - 2 uppercase ${b.status === 'completed' ? 'text-green-600 bg-green-50' : 'text-brand-blue bg-blue-50'} `}>
                         {b.status}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <div className="font-bold text-sm text-brand-charcoal uppercase">{b.gymName}</div>
-                        <div className="font-mono text-xs text-gray-500">User: {b.userName.split(' ')[0]}</div>
+                    <div className="flex justify-between items-center gap-4">
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm text-brand-charcoal uppercase truncate">{b.gymName}</div>
+                        <div className="font-mono text-xs text-gray-500 truncate">User: {b.userName.split(' ')[0]}</div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right shrink-0">
                         <div className="font-black text-brand-charcoal">฿{b.totalPrice}</div>
                         {b.commissionAmount > 0 && (
                           <div className="font-mono text-[10px] text-brand-red">
@@ -204,13 +521,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
           </BlockTable>
 
           {/* System Logs (Static) */}
-          <div className="bg-brand-charcoal text-gray-400 p-6 border-2 border-brand-charcoal font-mono text-[10px] space-y-2">
+          <div className="bg-brand-charcoal text-gray-400 p-6 border-2 border-brand-charcoal font-mono text-[10px] space-y-2 overflow-hidden shadow-[8px_8px_0px_0px_#AE3A17]">
             <div className="text-white font-bold border-b border-gray-600 pb-2 mb-2">SYSTEM LOGS</div>
-            <p>&gt; [SYSTEM] Initialized 3 Gym nodes</p>
-            <p>&gt; [SYSTEM] Loaded {USERS.length} user profiles from auth-data</p>
-            <p>&gt; [AFFILIATE] Tracking cookie expiry set to 30 days</p>
-            <p>&gt; [BOT] Kru AI agent connected successfully</p>
-            <p className="animate-pulse">&gt; [MONITOR] Watching for new bookings...</p>
+            <p className="truncate">&gt; [SYSTEM] Initialized 3 Gym nodes</p>
+            <p className="truncate">&gt; [SYSTEM] Loaded {USERS.length} user profiles from auth-data</p>
+            <p className="truncate">&gt; [AFFILIATE] Tracking cookie expiry set to 30 days</p>
+            <p className="truncate">&gt; [BOT] Kru AI agent connected successfully</p>
+            <p className="animate-pulse truncate">&gt; [MONITOR] Watching for new bookings...</p>
           </div>
         </div>
       </div>

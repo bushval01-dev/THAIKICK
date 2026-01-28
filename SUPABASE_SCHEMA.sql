@@ -83,3 +83,15 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+
+-- News/Announcements Table
+create table public.announcements (
+  id uuid default uuid_generate_v4() primary key,
+  title text not null,
+  content text not null,
+  image_url text,
+  is_active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+

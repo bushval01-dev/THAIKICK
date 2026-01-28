@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User as UserIcon, X, Loader } from 'lucide-react';
 import { signIn, signUp } from '../services/authService';
+import { supabase } from '../lib/supabaseClient';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -37,9 +38,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
         );
 
         try {
-            const authPromise = isLogin
-                ? signIn(email, password)
-                : signUp(email, password, name);
+            let authPromise;
+            if (isLogin) {
+                // Safety: Clear any potential stale session state before logging in
+                await supabase.auth.signOut();
+                authPromise = signIn(email, password);
+            } else {
+                authPromise = signUp(email, password, name);
+            }
 
             // Race against timeout
             await Promise.race([authPromise, timeout]);

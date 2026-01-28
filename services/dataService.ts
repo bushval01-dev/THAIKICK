@@ -76,6 +76,103 @@ export const getGymById = async (id: string): Promise<Gym | null> => {
     } as unknown as Gym;
 };
 
+export const createGym = async (gym: Partial<Gym>) => {
+    // Map Frontend types to DB columns
+    const dbGym = {
+        name: gym.name,
+        location: gym.location,
+        description: gym.description,
+        images: gym.images,
+        base_price: gym.basePrice,
+        owner_id: gym.ownerId, // Optional, might be null for admin created
+    };
+
+    const { data, error } = await supabase
+        .from('gyms')
+        .insert(dbGym)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const updateGym = async (id: string, gym: Partial<Gym>) => {
+    const dbGym: any = {};
+    if (gym.name) dbGym.name = gym.name;
+    if (gym.location) dbGym.location = gym.location;
+    if (gym.description) dbGym.description = gym.description;
+    if (gym.images) dbGym.images = gym.images;
+    if (gym.basePrice) dbGym.base_price = gym.basePrice;
+
+    // Safety check just in case
+    if (Object.keys(dbGym).length === 0) return;
+
+    const { data, error } = await supabase
+        .from('gyms')
+        .update(dbGym)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const deleteGym = async (id: string) => {
+    // 1. Delete associated Bookings first
+    const { error: bookingError } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('gym_id', id);
+    if (bookingError) throw bookingError;
+
+    // 2. Delete associated Trainers
+    const { error: trainerError } = await supabase
+        .from('trainers')
+        .delete()
+        .eq('gym_id', id);
+    if (trainerError) throw trainerError;
+
+    // 3. Delete the Gym
+    const { error } = await supabase
+        .from('gyms')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
+};
+
+// --- Trainer Services ---
+
+export const createTrainer = async (trainer: Partial<Trainer> & { gymId: string }) => {
+    const dbTrainer = {
+        gym_id: trainer.gymId,
+        name: trainer.name,
+        specialty: trainer.specialty,
+        price_per_session: trainer.pricePerSession,
+        image_url: trainer.image,
+    };
+
+    const { data, error } = await supabase
+        .from('trainers')
+        .insert(dbTrainer)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const deleteTrainer = async (id: string) => {
+    const { error } = await supabase
+        .from('trainers')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
+};
+
 // --- Booking Services ---
 
 export const createBooking = async (booking: Partial<Booking>) => {
@@ -133,3 +230,123 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
         commissionAmount: b.commission_amount
     }));
 };
+
+// --- Affiliate Services ---
+
+export const createAffiliateApplication = async (userId: string, reason: string) => {
+    const { data, error } = await supabase
+        .from('affiliate_applications')
+        .insert({
+            user_id: userId,
+            reason: reason,
+            status: 'pending'
+        })
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    await supabase.from('users').update({ affiliate_status: 'pending' }).eq('id', userId);
+    return data;
+};
+
+export const getAffiliateApplications = async () => {
+    const { data, error } = await supabase
+        .from('affiliate_applications')
+        .select('*, user:users (name, email)')
+        .eq('status', 'pending')  // FIXED: Only active requests
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching applications:', error);
+        return [];
+    }
+
+    return data.map((app: any) => ({
+        id: app.id,
+        userId: app.user_id,
+        userName: app.user?.name || 'Unknown',
+        userEmail: app.user?.email,
+        reason: app.reason,
+        status: app.status
+    }));
+};
+
+export const updateAffiliateApplicationStatus = async (appId: string, status: 'approved' | 'rejected') => {
+    const { data, error } = await supabase
+        .from('affiliate_applications')
+        .update({ status })
+        .eq('id', appId)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const updateUserAffiliateStatus = async (userId: string, isAffiliate: boolean, status: string, code?: string) => {
+    const updates: any = {
+        is_affiliate: isAffiliate,
+        affiliate_status: status
+    };
+    if (code) updates.affiliate_code = code;
+
+    const { error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', userId);
+
+    if (error) throw error;
+};
+
+// --- Announcement Services ---
+
+export const getAnnouncements = async () => {
+    const { data, error } = await supabase
+        .from('announcements')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching announcements:', error);
+        return [];
+    }
+
+    return data.map((a: any) => ({
+        id: a.id,
+        title: a.title,
+        content: a.content,
+        imageUrl: a.image_url,
+        isActive: a.is_active,
+        createdAt: a.created_at
+    }));
+};
+
+export const createAnnouncement = async (title: string, content: string, imageUrl?: string) => {
+    const dbAnnouncement = {
+        title,
+        content,
+        image_url: imageUrl,
+        is_active: true
+    };
+
+    const { data, error } = await supabase
+        .from('announcements')
+        .insert(dbAnnouncement)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const deleteAnnouncement = async (id: string) => {
+    const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
+};
+

@@ -12,8 +12,16 @@ import BookingPage from './components/BookingPage';
 import { BOOKINGS, AFFILIATE_APPLICATIONS } from './lib/data';
 import { USERS } from './lib/auth-data';
 import { Gym, User, Booking } from './lib/types';
-import { getGyms } from './services/dataService'; // Import Service
-import { getCurrentUser } from './services/authService'; // Import Auth Service
+import {
+  getGyms,
+  getUserBookings,
+  createAffiliateApplication,
+  getAffiliateApplications,
+  updateAffiliateApplicationStatus,
+  updateUserAffiliateStatus,
+  getAnnouncements // Added import
+} from './services/dataService';
+import { getCurrentUser } from './services/authService';
 import { supabase } from './lib/supabaseClient';
 
 // --- Shared Components ---
@@ -45,8 +53,6 @@ const BlockInput: React.FC<{ label: string; value?: string; onChange?: (e: any) 
     />
   </div>
 );
-
-// --- Page Components ---
 
 const GymCard: React.FC<{ gym: Gym; onBook: () => void; isLarge?: boolean }> = ({ gym, onBook, isLarge = false }) => (
   <div className={`col-span-12 ${isLarge ? 'md:col-span-8' : 'md:col-span-4'} bg-white border border-gray-300 group opacity-0 animate-reveal fill-mode-forwards`}>
@@ -93,9 +99,13 @@ const GymCard: React.FC<{ gym: Gym; onBook: () => void; isLarge?: boolean }> = (
 
 const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> = ({ user, gyms, setBookings }) => {
   const navigate = useNavigate();
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    getAnnouncements().then(setAnnouncements);
+  }, []);
 
   const handleBookClick = (gym: Gym) => {
-    // We now route to a full page instead of a modal
     navigate(`/booking/${gym.id}`);
   };
 
@@ -114,6 +124,27 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
           From backyard rings to world-class stadiums.
         </div>
       </div>
+
+      {/* News Ticker / Announcements */}
+      {announcements.length > 0 && (
+        <div className="mb-12 bg-brand-charcoal text-white p-6 border-l-4 border-brand-red animate-reveal shadow-[8px_8px_0px_0px_#AE3A17]">
+          <h3 className="font-black uppercase tracking-widest text-sm mb-4 text-brand-red flex items-center gap-2">
+            <span className="w-2 h-2 bg-brand-red rounded-full animate-pulse"></span>
+            Ring Side News
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {announcements.slice(0, 3).map((news: any) => (
+              <div key={news.id} className="border border-gray-700 p-4 bg-white/5 hover:bg-white/10 transition-colors">
+                <div className="font-bold uppercase text-lg mb-2 text-white">{news.title}</div>
+                <p className="font-mono text-xs text-gray-400 leading-relaxed mb-3">
+                  {news.content}
+                </p>
+                <div className="text-[10px] font-mono text-brand-blue uppercase">{new Date(news.createdAt).toLocaleDateString()}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Booking Bar Component */}
       <div className="bg-white border-2 border-brand-charcoal grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] shadow-[12px_12px_0px_0px_#3471AE]">
@@ -147,12 +178,7 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
         ))}
 
         {/* Fillers for the aesthetic if strictly 2 gyms */}
-        {gyms.length < 3 && (
-          <div className="col-span-12 md:col-span-4 bg-white border border-gray-200 p-8 flex flex-col justify-between min-h-[400px]">
-            <Mono className="text-gray-400">Placeholder</Mono>
-            <h3 className="text-2xl font-black text-gray-300 uppercase">More gyms<br />coming soon</h3>
-          </div>
-        )}
+
       </div>
     </div>
   );
@@ -185,35 +211,89 @@ const BlockTable: React.FC<{ title: string; children: React.ReactNode }> = ({ ti
   </div>
 );
 
+
 const CustomerDashboard: React.FC<{ user: User; bookings: Booking[]; requestAffiliate: () => void }> = ({ user, bookings, requestAffiliate }) => {
+  // Filter bookings for this user
   const myBookings = bookings.filter(b => b.userId === user.id);
+
+  // Sort by date (newest first)
+  const sortedBookings = [...myBookings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const activeBookings = sortedBookings.filter(b =>
+    (b.status === 'confirmed') && new Date(b.date) >= new Date(new Date().setHours(0, 0, 0, 0))
+  );
+
+  const pastBookings = sortedBookings.filter(b =>
+    !activeBookings.includes(b)
+  );
+
+  const StatusBadge = ({ status }: { status: string }) => {
+    let color = "bg-gray-200 text-gray-500";
+    if (status === 'confirmed') color = "bg-brand-blue text-white";
+    if (status === 'completed') color = "bg-green-500 text-white";
+    if (status === 'cancelled') color = "bg-red-500 text-white";
+
+    return (
+      <span className={`${color} px-2 py-1 font-mono text-[10px] uppercase font-bold`}>
+        {status}
+      </span>
+    );
+  };
 
   return (
     <DashboardContainer title={`Welcome Back, ${user.name.split(' ')[0]}`} subtitle={`Fighter Dashboard // ID: ${user.id}`}>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        <div className="lg:col-span-2">
-          <BlockTable title="Upcoming Sessions">
-            {myBookings.length === 0 ? (
+        <div className="lg:col-span-2 space-y-12">
+
+          {/* Section 1: Active Bookings */}
+          <BlockTable title="Active & Upcoming Sessions">
+            {activeBookings.length === 0 ? (
               <div className="p-12 text-center font-mono text-sm text-gray-400">NO ACTIVE BOOKINGS</div>
             ) : (
               <div className="divide-y-2 divide-gray-100">
-                {myBookings.map(b => (
+                {activeBookings.map(b => (
                   <div key={b.id} className="p-6 flex flex-col sm:flex-row justify-between sm:items-center hover:bg-brand-bone transition-colors group">
                     <div className="flex items-center gap-6 mb-4 sm:mb-0">
-                      <div className={`w-12 h-12 flex items-center justify-center border-2 border-brand-charcoal font-black text-sm ${b.status === 'confirmed' ? 'bg-brand-blue text-white' : 'bg-gray-200 text-gray-500'}`}>
+                      <div className={`w-12 h-12 flex items-center justify-center border-2 border-brand-charcoal font-black text-sm bg-brand-bone text-brand-charcoal`}>
                         {b.type === 'private' ? 'PVT' : 'STD'}
                       </div>
                       <div>
                         <div className="font-black text-lg uppercase leading-none mb-1 group-hover:text-brand-red transition-colors">{b.gymName}</div>
-                        <Mono className="text-gray-500">{b.date}</Mono>
+                        <Mono className="text-gray-500">{b.date} • {b.trainerName || 'No Trainer'}</Mono>
                       </div>
                     </div>
-                    <div className="font-mono text-lg font-bold">฿{b.totalPrice}</div>
+                    <div className="text-right">
+                      <div className="font-mono text-lg font-bold mb-1">฿{b.totalPrice}</div>
+                      <StatusBadge status={b.status} />
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </BlockTable>
+
+          {/* Section 2: History */}
+          <BlockTable title="Booking History">
+            {pastBookings.length === 0 ? (
+              <div className="p-8 text-center font-mono text-xs text-gray-400">NO HISTORY FOUND</div>
+            ) : (
+              <div className="divide-y-2 divide-gray-100 opacity-80">
+                {pastBookings.map(b => (
+                  <div key={b.id} className="p-4 flex flex-col sm:flex-row justify-between sm:items-center bg-gray-50">
+                    <div className="flex items-center gap-4 mb-2 sm:mb-0">
+                      <div className="font-mono text-xs text-gray-400 w-24">{b.date}</div>
+                      <div className="font-bold text-sm uppercase text-gray-600">{b.gymName}</div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <StatusBadge status={b.status} />
+                      <div className="font-mono text-sm text-gray-400">฿{b.totalPrice}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </BlockTable>
+
         </div>
 
         <div>
@@ -301,7 +381,7 @@ const App: React.FC = () => {
 
   /* App Data */
   const [gyms, setGyms] = useState<Gym[]>([]);
-  const [bookings, setBookings] = useState<Booking[]>(BOOKINGS);
+  const [bookings, setBookings] = useState<Booking[]>([]); // Start empty, fetch real data
   const [applications, setApplications] = useState<any[]>(AFFILIATE_APPLICATIONS);
 
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -323,55 +403,69 @@ const App: React.FC = () => {
     };
     fetchGyms();
 
-    // 2. Optimized Auth Check
-    const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session?.user) {
-          // A. Immediate Feedback: Set basic user from session (fast)
-          const basicUser: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.email?.split('@')[0] || 'Member',
-            role: 'customer',
-            avatar: 'https://via.placeholder.com/150',
-            isAffiliate: false,
-            affiliateEarnings: 0,
-            affiliateStatus: 'none'
-          };
-
-          if (mounted) setActiveUser(basicUser);
-
-          // B. Fetch Full Profile (Background)
-          getCurrentUser().then(fullUser => {
-            if (mounted && fullUser) setActiveUser(fullUser);
-          });
+    // 2. Auth Logic (Merged)
+    const handleUserUpdate = async (session: any) => {
+      if (!session?.user) {
+        if (mounted) {
+          setActiveUser(null);
+          setBookings([]);
+          setIsAuthChecking(false);
         }
-      } catch (e) {
-        console.warn("Auth init warning:", e);
+        return;
+      }
+
+      const basicUser: User = {
+        id: session.user.id,
+        email: session.user.email || '',
+        name: session.user.email?.split('@')[0] || 'Member',
+        role: 'customer',
+        avatar: 'https://via.placeholder.com/150',
+        isAffiliate: false,
+        affiliateEarnings: 0,
+        affiliateStatus: 'none'
+      };
+
+      if (mounted) setActiveUser(basicUser);
+
+      try {
+        // Parallel: Fetch Profile + Fetch Bookings
+        const [fullUser, userBookings] = await Promise.all([
+          getCurrentUser(),
+          getUserBookings(session.user.id)
+        ]);
+
+        if (mounted) {
+          if (fullUser) {
+            setActiveUser(fullUser);
+            // If Admin, fetch all applications
+            if (fullUser.role === 'admin') {
+              getAffiliateApplications().then(apps => {
+                if (mounted) setApplications(apps);
+              });
+            }
+          }
+          setBookings(userBookings);
+        }
+      } catch (err) {
+        console.warn("Failed to load user data", err);
       } finally {
         if (mounted) setIsAuthChecking(false);
       }
     };
 
-    initAuth();
 
-    // 3. Listen for Auth Changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth Event:", event);
-      if (!mounted) return;
 
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        const user = await getCurrentUser();
-        if (mounted) setActiveUser(user);
-        if (mounted) setIsAuthChecking(false);
-      } else if (event === 'SIGNED_OUT') {
-        if (mounted) setActiveUser(null);
-        if (mounted) setIsAuthChecking(false);
-      }
+    // Initialize
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleUserUpdate(session);
     });
 
+    // Listen for changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserUpdate(session);
+    });
+
+    // Override cleanup to handle subscription
     return () => {
       mounted = false;
       subscription.unsubscribe();
@@ -382,36 +476,44 @@ const App: React.FC = () => {
     setGyms(gyms.map(g => g.id === updatedGym.id ? updatedGym : g));
   };
 
-  const handleAffiliateRequest = () => {
+  const handleAffiliateRequest = async () => {
     if (!activeUser) return;
-    const newApp = {
-      id: `app_${Date.now()}`,
-      userId: activeUser.id,
-      userName: activeUser.name,
-      reason: "Requested via dashboard",
-      status: 'pending' as const
-    };
-    setApplications([...applications, newApp]);
-    setActiveUser({ ...activeUser, affiliateStatus: 'pending' });
-    alert("APPLICATION SUBMITTED");
+    try {
+      await createAffiliateApplication(activeUser.id, "Requested via dashboard");
+      setActiveUser({ ...activeUser, affiliateStatus: 'pending' });
+      alert("APPLICATION SUBMITTED");
+    } catch (error) {
+      console.error("Affiliate request failed", error);
+      alert("Error submitting application");
+    }
   };
 
-  const handleAffiliateApproval = (appId: string, approved: boolean) => {
-    setApplications(applications.filter(a => a.id !== appId));
-    const app = applications.find(a => a.id === appId);
-    if (!app) return;
+  const handleAffiliateApproval = async (appId: string, approved: boolean) => {
+    try {
+      // 1. Update Application Status
+      const status = approved ? 'approved' : 'rejected';
+      const app = await updateAffiliateApplicationStatus(appId, status);
 
-    if (approved) {
-      const userToUpdate = USERS.find(u => u.id === app.userId);
-      if (userToUpdate) {
-        userToUpdate.isAffiliate = true;
-        userToUpdate.affiliateStatus = 'active';
-        userToUpdate.affiliateCode = userToUpdate.name.replace(/\s+/g, '').toLowerCase();
+      // 2. Update Local State (Remove from pending list)
+      setApplications(applications.filter(a => a.id !== appId));
+
+      // 3. Update User Status if Approved
+      if (approved) {
+        const userId = app.user_id; // From DB return
+        // Generate a simple code: First name + random number
+        // We need to fetch the user name or just use a random code for now if name not available easily here
+        // But actually getAffiliateApplications returns user name. 
+        // Let's assume we can generate a code.
+        const code = `fighter${Math.floor(Math.random() * 10000)}`;
+
+        await updateUserAffiliateStatus(userId, true, 'active', code);
+      } else {
+        await updateUserAffiliateStatus(app.user_id, false, 'rejected'); // Update status to rejected
       }
 
-      if (activeUser?.id === app.userId) {
-        setActiveUser({ ...activeUser, isAffiliate: true, affiliateStatus: 'active', affiliateCode: activeUser.name.replace(/\s+/g, '').toLowerCase() });
-      }
+    } catch (error) {
+      console.error("Approval failed", error);
+      alert("Action failed");
     }
   };
 
@@ -478,10 +580,7 @@ const App: React.FC = () => {
 
         <Chatbot />
 
-        {/* -- DEBUG BAR -- */}
-        <div className="fixed bottom-0 left-0 w-full bg-yellow-400 text-black font-mono text-[10px] p-1 text-center font-bold z-50 opacity-80 hover:opacity-100">
-          DEBUG: DB_URL = {import.meta.env.VITE_SUPABASE_URL || 'NOT_LOADED'}
-        </div>
+
       </div>
     </HashRouter>
   );

@@ -8,12 +8,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('Supabase URL or Anon Key missing. Check .env.local')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-        persistSession: true,
-        storage: window.localStorage,
-        storageKey: 'thaikick-auth-token',
-        autoRefreshToken: true,
-        detectSessionInUrl: true
-    }
-})
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)

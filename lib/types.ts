@@ -56,4 +56,12 @@ export interface AffiliateApplication {
   userName: string;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  imageUrl?: string;
+  isActive: boolean;
+  createdAt: string;
 }
