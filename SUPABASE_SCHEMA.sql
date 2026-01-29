@@ -95,3 +95,18 @@ create table public.announcements (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+
+-- Trainer Schedules Table
+create table public.trainer_schedules (
+  id uuid default uuid_generate_v4() primary key,
+  trainer_id uuid references public.trainers(id) not null,
+  day_of_week text not null, -- 'Monday', 'Tuesday', etc.
+  start_time time not null,
+  end_time time not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Update Bookings Table to include time slots
+alter table public.bookings 
+add column start_time time,
+add column end_time time;

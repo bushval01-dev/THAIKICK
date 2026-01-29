@@ -41,6 +41,8 @@ export interface Booking {
   userId: string;
   userName: string;
   date: string;
+  startTime?: string;
+  endTime?: string;
   type: 'standard' | 'private';
   trainerId?: string;
   trainerName?: string;
@@ -56,6 +58,15 @@ export interface AffiliateApplication {
   userName: string;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
+}
+
+export interface TrainerSchedule {
+  id: string;
+  trainerId: string;
+  dayOfWeek: string;
+  startTime: string; // "09:00"
+  endTime: string;   // "10:00"
+}
 
 export interface Announcement {
   id: string;

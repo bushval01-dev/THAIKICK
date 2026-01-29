@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus } from 'lucide-react';
+import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus, Calendar, Clock } from 'lucide-react';
 import { USERS } from '../lib/auth-data';
-import { Booking, AffiliateApplication, Announcement, Gym, Trainer } from '../lib/types';
-import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer } from '../services/dataService';
+import { Booking, AffiliateApplication, Announcement, Gym, Trainer, TrainerSchedule, User } from '../lib/types';
+import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer, getTrainerSchedules, createTrainerSchedule, deleteTrainerSchedule, getAllUsers } from '../services/dataService';
 
 interface AdminDashboardProps {
   bookings: Booking[];
@@ -36,6 +36,7 @@ const Mono: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications, handleApprove }) => {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [users, setUsers] = useState<User[]>([]); // New state for users
   const [newsTitle, setNewsTitle] = useState("");
   const [newsContent, setNewsContent] = useState("");
   const [isPosting, setIsPosting] = useState(false);
@@ -47,10 +48,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
   // Trainer Form State
   const [newTrainer, setNewTrainer] = useState<Partial<Trainer>>({ name: '', specialty: '', pricePerSession: 500, image: '' });
 
+  // Schedule Management State
+  const [managingScheduleFor, setManagingScheduleFor] = useState<Trainer | null>(null);
+  const [trainerSchedules, setTrainerSchedules] = useState<TrainerSchedule[]>([]);
+  const [newSchedule, setNewSchedule] = useState<{ day: string; start: string; end: string }>({ day: 'Monday', start: '09:00', end: '10:00' });
+
+  // Attendance Check State
+  const [attendanceDate, setAttendanceDate] = useState<string>(''); // Default empty = All
+  const [attendanceGymId, setAttendanceGymId] = useState<string>('all');
+
   useEffect(() => {
     loadNews();
     loadGyms();
+    loadUsers();
   }, []);
+
+  const loadUsers = async () => {
+    const data = await getAllUsers();
+    setUsers(data);
+  };
 
   const loadGyms = async () => {
     const data = await getGyms();
@@ -123,6 +139,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
     }
   };
 
+  const openScheduleManager = async (trainer: Trainer) => {
+    setManagingScheduleFor(trainer);
+    const schedules = await getTrainerSchedules(trainer.id);
+    setTrainerSchedules(schedules);
+  };
+
+  const handleAddSchedule = async () => {
+    if (!managingScheduleFor) return;
+    try {
+      await createTrainerSchedule({
+        trainerId: managingScheduleFor.id,
+        dayOfWeek: newSchedule.day,
+        startTime: newSchedule.start,
+        endTime: newSchedule.end
+      });
+      // Reload
+      const schedules = await getTrainerSchedules(managingScheduleFor.id);
+      setTrainerSchedules(schedules);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add schedule");
+    }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    if (!managingScheduleFor) return;
+    try {
+      await deleteTrainerSchedule(id);
+      const schedules = await getTrainerSchedules(managingScheduleFor.id);
+      setTrainerSchedules(schedules);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const loadNews = async () => {
     const data = await getAnnouncements();
     setAnnouncements(data);
@@ -156,6 +207,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
 
   const totalRevenue = bookings.reduce((sum, b) => sum + b.totalPrice, 0);
   const totalCommission = bookings.reduce((sum, b) => sum + b.commissionAmount, 0);
+
+  // Filter Bookings for Attendance
+  const attendanceList = bookings.filter(b => {
+    const matchDate = !attendanceDate || b.date === attendanceDate;
+    const matchGym = attendanceGymId === 'all' || b.gymId === attendanceGymId;
+    const isPaid = b.status === 'confirmed' || b.status === 'completed';
+    return matchDate && matchGym && isPaid;
+  });
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-10 py-12 animate-reveal min-h-[80vh]">
@@ -193,6 +252,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
             <div className="text-2xl md:text-3xl font-black mt-2">{applications.length}</div>
           </div>
           <Activity className="w-8 h-8 text-brand-red animate-pulse" />
+        </div>
+      </div>
+
+      {/* Analytics Navigation */}
+      <div className="mb-12 animate-reveal" style={{ animationDelay: '0.1s' }}>
+        <div className="bg-brand-charcoal p-8 border-2 border-brand-charcoal flex flex-col md:flex-row items-center justify-between gap-6 shadow-[8px_8px_0px_0px_#AE3A17] group hover:bg-white hover:text-brand-charcoal transition-all duration-300">
+          <div>
+            <h3 className="text-2xl font-black uppercase text-white group-hover:text-brand-charcoal mb-2 flex items-center gap-2">
+              <Activity className="w-6 h-6 text-brand-red animate-pulse" />
+              Business Intelligence
+            </h3>
+            <p className="font-mono text-xs text-brand-blue group-hover:text-brand-charcoal/70">
+              View deep insights, revenue trends, and top performance metrics.
+            </p>
+          </div>
+
+          <a href="#/analytics" className="px-8 py-4 bg-brand-red text-white font-black uppercase text-sm border-2 border-brand-red hover:bg-transparent hover:text-brand-red hover:border-brand-red transition-all whitespace-nowrap">
+            Launch Analytics Console
+          </a>
         </div>
       </div>
 
@@ -255,122 +333,185 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
 
             {isGymFormOpen && (
               <div className="p-6 bg-brand-bone border-b-2 border-brand-charcoal">
-                <form onSubmit={handleSaveGym} className="space-y-4">
-                  <div className="p-2 bg-gray-100 rounded mb-2 border border-gray-200">
-                    <h4 className="font-mono text-xs font-bold uppercase text-brand-charcoal mb-2 border-b border-gray-300 pb-1">Gym Info</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <input
-                        className="border p-2 font-mono text-xs bg-white w-full"
-                        placeholder="Gym Name"
-                        value={editingGym?.name || ''}
-                        onChange={e => setEditingGym({ ...editingGym, name: e.target.value })}
-                        required
-                      />
-                      <input
-                        className="border p-2 font-mono text-xs bg-white w-full"
-                        placeholder="Image URL"
-                        value={editingGym?.images?.[0] || ''}
-                        onChange={e => setEditingGym({ ...editingGym, images: [e.target.value] })}
-                      />
+                {managingScheduleFor ? (
+                  // --- SCHEDULE MANAGER MODE ---
+                  <div className="animate-reveal">
+                    <div className="flex justify-between items-center mb-4 border-b border-brand-charcoal pb-2">
+                      <h4 className="font-black uppercase text-sm">Manage Schedule: {managingScheduleFor.name}</h4>
+                      <button onClick={() => setManagingScheduleFor(null)} className="text-xs font-mono underline hover:text-brand-red">Close Schedule</button>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <input
-                        className="border p-2 font-mono text-xs bg-white w-full"
-                        placeholder="Location"
-                        value={editingGym?.location || ''}
-                        onChange={e => setEditingGym({ ...editingGym, location: e.target.value })}
-                        required
-                      />
-                      <input
-                        className="border p-2 font-mono text-xs bg-white w-full"
-                        placeholder="Base Price (THB)"
-                        type="number"
-                        value={editingGym?.basePrice || ''}
-                        onChange={e => setEditingGym({ ...editingGym, basePrice: Number(e.target.value) })}
-                        required
-                      />
 
-                    </div>
-                    <textarea
-                      className="border p-2 font-mono text-xs bg-white w-full h-16 mt-2"
-                      placeholder="Description"
-                      value={editingGym?.description || ''}
-                      onChange={e => setEditingGym({ ...editingGym, description: e.target.value })}
-                    />
-                  </div>
-
-                  {/* Trainer Management Section (Only if editing existing gym) */}
-                  {editingGym?.id && (
-                    <div className="p-2 bg-white rounded border border-gray-200">
-                      <h4 className="font-mono text-xs font-bold uppercase text-brand-charcoal mb-2 border-b border-gray-100 pb-1 flex justify-between items-center">
-                        <span>Trainer Roster ({editingGym.trainers?.length || 0})</span>
-                        <span className="text-[10px] text-gray-400">Add below</span>
-                      </h4>
-
-                      {/* List Existing Trainers */}
-                      <div className="space-y-2 mb-4 max-h-[150px] overflow-y-auto">
-                        {editingGym.trainers?.map((t: Trainer) => (
-                          <div key={t.id} className="flex justify-between items-center bg-gray-50 p-2 text-xs font-mono">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* List */}
+                      <div className="space-y-2">
+                        {trainerSchedules.length === 0 && <div className="text-xs text-gray-400 font-mono">No active slots.</div>}
+                        {trainerSchedules.map(s => (
+                          <div key={s.id} className="flex justify-between items-center bg-white p-2 border border-gray-200 shadow-sm">
                             <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 bg-gray-200 rounded-full overflow-hidden">
-                                {t.image && <img src={t.image} className="w-full h-full object-cover" />}
-                              </div>
-                              <div>
-                                <div className="font-bold">{t.name}</div>
-                                <div className="text-[10px] text-gray-500">{t.specialty}</div>
-                              </div>
+                              <div className="bg-brand-blue text-white text-[10px] font-bold px-2 py-1 w-20 text-center">{s.dayOfWeek}</div>
+                              <div className="font-mono text-xs">{s.startTime} - {s.endTime}</div>
                             </div>
-                            <button type="button" onClick={() => handleDeleteTrainer(t.id)} className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3 h-3" />
+                            <button onClick={() => handleDeleteSchedule(s.id)} className="text-gray-400 hover:text-red-500">
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         ))}
-                        {(!editingGym.trainers || editingGym.trainers.length === 0) && <div className="text-center py-2 text-gray-300 text-[10px]">No trainers yet</div>}
                       </div>
 
-                      {/* Add Trainer Inputs */}
-                      <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
-                        <div className="flex gap-2">
-                          <input
-                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
-                            placeholder="Name"
-                            value={newTrainer.name}
-                            onChange={e => setNewTrainer({ ...newTrainer, name: e.target.value })}
-                          />
-                          <input
-                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
-                            placeholder="Specialty (e.g. Boxing)"
-                            value={newTrainer.specialty}
-                            onChange={e => setNewTrainer({ ...newTrainer, specialty: e.target.value })}
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
-                            placeholder="Price (+THB)"
-                            type="number"
-                            value={newTrainer.pricePerSession}
-                            onChange={e => setNewTrainer({ ...newTrainer, pricePerSession: Number(e.target.value) })}
-                          />
-                          <input
-                            className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
-                            placeholder="Image URL"
-                            value={newTrainer.image}
-                            onChange={e => setNewTrainer({ ...newTrainer, image: e.target.value })}
-                          />
-                          <button type="button" onClick={handleAddTrainer} className="bg-brand-blue text-white px-2 rounded hover:bg-blue-600 flex items-center justify-center">
-                            <Plus className="w-3 h-3" />
+                      {/* Add Form */}
+                      <div className="bg-gray-100 p-4 border border-gray-200">
+                        <div className="font-bold text-xs uppercase mb-3 text-gray-500">Add New Slot</div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold mb-1">Day</label>
+                            <select
+                              className="w-full p-2 text-xs font-mono border"
+                              value={newSchedule.day}
+                              onChange={e => setNewSchedule({ ...newSchedule, day: e.target.value })}
+                            >
+                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold mb-1">Start</label>
+                              <input type="time" className="w-full p-2 text-xs font-mono border" value={newSchedule.start} onChange={e => setNewSchedule({ ...newSchedule, start: e.target.value })} />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold mb-1">End</label>
+                              <input type="time" className="w-full p-2 text-xs font-mono border" value={newSchedule.end} onChange={e => setNewSchedule({ ...newSchedule, end: e.target.value })} />
+                            </div>
+                          </div>
+                          <button onClick={handleAddSchedule} className="w-full bg-brand-charcoal text-white font-bold text-xs uppercase py-2 hover:bg-brand-blue transition-colors">
+                            Add Time Slot
                           </button>
                         </div>
                       </div>
                     </div>
-                  )}
-
-                  <div className="flex gap-2 justify-end pt-2 border-t border-brand-charcoal">
-                    <button type="button" onClick={() => setIsGymFormOpen(false)} className="px-4 py-2 font-mono text-xs font-bold uppercase hover:bg-gray-200">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-brand-charcoal text-white font-mono text-xs font-bold uppercase hover:bg-green-600">Save Changes</button>
                   </div>
-                </form>
+                ) : (
+                  <form onSubmit={handleSaveGym} className="space-y-4">
+                    <div className="p-2 bg-gray-100 rounded mb-2 border border-gray-200">
+                      <h4 className="font-mono text-xs font-bold uppercase text-brand-charcoal mb-2 border-b border-gray-300 pb-1">Gym Info</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <input
+                          className="border p-2 font-mono text-xs bg-white w-full"
+                          placeholder="Gym Name"
+                          value={editingGym?.name || ''}
+                          onChange={e => setEditingGym({ ...editingGym, name: e.target.value })}
+                          required
+                        />
+                        <input
+                          className="border p-2 font-mono text-xs bg-white w-full"
+                          placeholder="Image URL"
+                          value={editingGym?.images?.[0] || ''}
+                          onChange={e => setEditingGym({ ...editingGym, images: [e.target.value] })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mt-2">
+                        <input
+                          className="border p-2 font-mono text-xs bg-white w-full"
+                          placeholder="Location"
+                          value={editingGym?.location || ''}
+                          onChange={e => setEditingGym({ ...editingGym, location: e.target.value })}
+                          required
+                        />
+                        <input
+                          className="border p-2 font-mono text-xs bg-white w-full"
+                          placeholder="Base Price (THB)"
+                          type="number"
+                          value={editingGym?.basePrice || ''}
+                          onChange={e => setEditingGym({ ...editingGym, basePrice: Number(e.target.value) })}
+                          required
+                        />
+
+                      </div>
+                      <textarea
+                        className="border p-2 font-mono text-xs bg-white w-full h-16 mt-2"
+                        placeholder="Description"
+                        value={editingGym?.description || ''}
+                        onChange={e => setEditingGym({ ...editingGym, description: e.target.value })}
+                      />
+                    </div>
+
+                    {/* Trainer Management Section (Only if editing existing gym) */}
+                    {editingGym?.id && (
+                      <div className="p-2 bg-white rounded border border-gray-200">
+                        <h4 className="font-mono text-xs font-bold uppercase text-brand-charcoal mb-2 border-b border-gray-100 pb-1 flex justify-between items-center">
+                          <span>Trainer Roster ({editingGym.trainers?.length || 0})</span>
+                          <span className="text-[10px] text-gray-400">Add below</span>
+                        </h4>
+
+                        {/* List Existing Trainers */}
+                        <div className="space-y-2 mb-4 max-h-[150px] overflow-y-auto">
+                          {editingGym.trainers?.map((t: Trainer) => (
+                            <div key={t.id} className="flex justify-between items-center bg-gray-50 p-2 text-xs font-mono">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 bg-gray-200 rounded-full overflow-hidden">
+                                  {t.image && <img src={t.image} className="w-full h-full object-cover" />}
+                                </div>
+                                <div>
+                                  <div className="font-bold">{t.name}</div>
+                                  <div className="text-[10px] text-gray-500">{t.specialty}</div>
+                                </div>
+                              </div>
+                              <button type="button" onClick={() => openScheduleManager(t)} className="text-brand-blue hover:text-brand-charcoal mr-2" title="Manage Schedule">
+                                <Calendar className="w-3 h-3" />
+                              </button>
+                              <button type="button" onClick={() => handleDeleteTrainer(t.id)} className="text-red-400 hover:text-red-600">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          {(!editingGym.trainers || editingGym.trainers.length === 0) && <div className="text-center py-2 text-gray-300 text-[10px]">No trainers yet</div>}
+                        </div>
+
+                        {/* Add Trainer Inputs */}
+                        <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
+                          <div className="flex gap-2">
+                            <input
+                              className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                              placeholder="Name"
+                              value={newTrainer.name}
+                              onChange={e => setNewTrainer({ ...newTrainer, name: e.target.value })}
+                            />
+                            <input
+                              className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                              placeholder="Specialty (e.g. Boxing)"
+                              value={newTrainer.specialty}
+                              onChange={e => setNewTrainer({ ...newTrainer, specialty: e.target.value })}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                              placeholder="Price (+THB)"
+                              type="number"
+                              value={newTrainer.pricePerSession}
+                              onChange={e => setNewTrainer({ ...newTrainer, pricePerSession: Number(e.target.value) })}
+                            />
+                            <input
+                              className="border p-1 text-[10px] font-mono bg-gray-50 w-full"
+                              placeholder="Image URL"
+                              value={newTrainer.image}
+                              onChange={e => setNewTrainer({ ...newTrainer, image: e.target.value })}
+                            />
+                            <button type="button" onClick={handleAddTrainer} className="bg-brand-blue text-white px-2 rounded hover:bg-blue-600 flex items-center justify-center">
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 justify-end pt-2 border-t border-brand-charcoal">
+                      <button type="button" onClick={() => setIsGymFormOpen(false)} className="px-4 py-2 font-mono text-xs font-bold uppercase hover:bg-gray-200">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-brand-charcoal text-white font-mono text-xs font-bold uppercase hover:bg-green-600">Save Changes</button>
+                    </div>
+                  </form>
+                )}
               </div>
             )}
 
@@ -453,6 +594,77 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
 
         {/* Right Column: Data */}
         <div className="space-y-12 min-w-0">
+
+          {/* New Section: Daily Attendance / Class Roster */}
+          <BlockTable title="Daily Attendance (Paid)" icon={<Users className="w-4 h-4" />}>
+            <div className="p-4 bg-gray-50 border-b border-gray-100 space-y-3">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="date"
+                    className={`border p-2 font-mono text-xs w-full bg-white pr-8 placeholder-transparent ${attendanceDate ? 'text-brand-charcoal' : 'text-transparent'}`}
+                    value={attendanceDate}
+                    onChange={e => setAttendanceDate(e.target.value)}
+                  />
+                  {!attendanceDate && (
+                    <div className="absolute inset-0 flex items-center px-4 pointer-events-none text-xs text-gray-400 font-mono">
+                      Show All
+                    </div>
+                  )}
+                  {attendanceDate && (
+                    <button
+                      onClick={() => setAttendanceDate('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-red-500 hover:text-red-700"
+                      title="Clear Date"
+                    >
+                      X
+                    </button>
+                  )}
+                </div>
+                <select
+                  className="border p-2 font-mono text-xs w-full bg-white flex-1"
+                  value={attendanceGymId}
+                  onChange={e => setAttendanceGymId(e.target.value)}
+                >
+                  <option value="all">All Locations</option>
+                  {gyms.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              <div className="flex justify-between items-center px-2">
+                <span className="font-mono text-xs text-gray-500 font-bold uppercase">Total Attendees</span>
+                <span className="font-black text-2xl text-brand-charcoal">{attendanceList.length}</span>
+              </div>
+            </div>
+
+            <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
+              {attendanceList.length === 0 ? (
+                <div className="p-8 text-center font-mono text-xs text-gray-400">No attendees found</div>
+              ) : (
+                attendanceList.map(b => (
+                  <div key={b.id} className="p-3 bg-white hover:bg-gray-50">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-bold text-xs uppercase text-brand-charcoal">{b.userName || 'Guest'}</span>
+                      <div className="text-right">
+                        <span className="font-mono text-[10px] text-gray-400 block">{b.gymName}</span>
+                        <span className="font-mono text-[10px] text-brand-blue block">{b.date}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${b.type === 'private' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {b.type === 'private' ? 'Private' : 'Standard'}
+                      </span>
+                      {b.type === 'private' && (
+                        <span className="text-[10px] text-gray-500 font-mono border border-gray-200 px-1">
+                          {b.trainerName} @ {b.startTime}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </BlockTable>
+
           {/* User Registry */}
           <BlockTable title="User Registry (Auth Data)" icon={<Shield className="w-4 h-4" />}>
             <div className="max-h-[400px] overflow-auto">
@@ -465,7 +677,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                   </tr>
                 </thead>
                 <tbody className="font-mono text-xs">
-                  {USERS.map(user => (
+                  {users.map(user => (
                     <tr key={user.id} className="border-b border-gray-100 hover:bg-brand-bone/50">
                       <td className="p-4 max-w-[200px]">
                         <div className="font-bold text-brand-charcoal truncate" title={user.name}>{user.name}</div>
@@ -524,7 +736,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
           <div className="bg-brand-charcoal text-gray-400 p-6 border-2 border-brand-charcoal font-mono text-[10px] space-y-2 overflow-hidden shadow-[8px_8px_0px_0px_#AE3A17]">
             <div className="text-white font-bold border-b border-gray-600 pb-2 mb-2">SYSTEM LOGS</div>
             <p className="truncate">&gt; [SYSTEM] Initialized 3 Gym nodes</p>
-            <p className="truncate">&gt; [SYSTEM] Loaded {USERS.length} user profiles from auth-data</p>
+            <p className="truncate">&gt; [SYSTEM] Loaded {users.length} user profiles from auth-data</p>
             <p className="truncate">&gt; [AFFILIATE] Tracking cookie expiry set to 30 days</p>
             <p className="truncate">&gt; [BOT] Kru AI agent connected successfully</p>
             <p className="animate-pulse truncate">&gt; [MONITOR] Watching for new bookings...</p>

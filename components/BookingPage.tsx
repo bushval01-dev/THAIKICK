@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Check, Shield, Lock, CreditCard, Tag } from 'lucide-react';
-import { Gym, User, Booking, Trainer } from '../lib/types';
+import { Gym, User, Booking, Trainer, TrainerSchedule } from '../lib/types';
 import { getReferralCode } from '../lib/affiliate';
-import { createBooking } from '../services/dataService';
+import { createBooking, getTrainerSchedules, getTrainerBookings } from '../services/dataService';
 
 interface BookingPageProps {
     gyms: Gym[];
@@ -24,7 +24,8 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
 
     // Booking State
     const [step, setStep] = useState<'booking' | 'payment'>('booking');
-    const [date, setDate] = useState<string>('');
+    const [startDate, setStartDate] = useState<string>('');
+    const [endDate, setEndDate] = useState<string>('');
     const [type, setType] = useState<'standard' | 'private'>('standard');
     const [selectedTrainer, setSelectedTrainer] = useState<Trainer | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -32,6 +33,62 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
     // Affiliate State
     const [referralCode, setReferralCode] = useState<string>('');
     const [referralApplied, setReferralApplied] = useState(false);
+
+    // Private Session State
+    const [availableSlots, setAvailableSlots] = useState<TrainerSchedule[]>([]);
+    const [selectedTime, setSelectedTime] = useState<{ start: string; end: string } | null>(null);
+
+    const getDayName = (dateStr: string) => {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        return days[new Date(dateStr).getDay()];
+    };
+
+    const calculateSessionCount = () => {
+        if (!startDate) return 0;
+        if (!endDate) return 1;
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        if (type === 'standard') {
+            // Standard: Every day
+            const diffTime = Math.abs(end.getTime() - start.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays + 1; // Inclusive
+        } else {
+            // Private: Weekly Recurrence
+            let count = 0;
+            let current = new Date(start);
+            while (current <= end) {
+                count++;
+                current.setDate(current.getDate() + 7);
+            }
+            return count;
+        }
+    };
+
+    useEffect(() => {
+        // For Private availability, we check the START date for reference schedule
+        // In a real app, we'd check every day in range, but for MVP we check the first day's schedule
+        if (type === 'private' && selectedTrainer && startDate) {
+            const fetchSchedule = async () => {
+                const schedules = await getTrainerSchedules(selectedTrainer.id);
+                // Check bookings for the start date only for now
+                const bookings = await getTrainerBookings(selectedTrainer.id, startDate);
+
+                const dayName = getDayName(startDate);
+                const relevantSlots = schedules.filter(s => s.dayOfWeek === dayName);
+
+                // Filter out taken slots
+                const freeSlots = relevantSlots.filter(s =>
+                    !bookings.some(b => b.startTime === s.startTime)
+                );
+
+                setAvailableSlots(freeSlots);
+                setSelectedTime(null); // Reset selection
+            };
+            fetchSchedule();
+        }
+    }, [type, selectedTrainer, startDate]);
 
     useEffect(() => {
         // 1. Locate Gym
@@ -70,15 +127,25 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
 
     // Pricing Logic
     const calculateTotal = () => {
-        let price = gym.basePrice;
-        if (gym.isFlashSale) price = price * (1 - gym.flashSaleDiscount / 100);
-        if (type === 'private' && selectedTrainer) price += selectedTrainer.pricePerSession;
-        return Math.round(price);
+        let oneSessionPrice = gym.basePrice;
+        if (gym.isFlashSale) oneSessionPrice = oneSessionPrice * (1 - gym.flashSaleDiscount / 100);
+        if (type === 'private' && selectedTrainer) oneSessionPrice += selectedTrainer.pricePerSession;
+
+        const count = calculateSessionCount();
+        return Math.round(oneSessionPrice * count);
     };
 
     const handleProceedToPayment = () => {
-        if (!date) {
-            alert("Please select a date.");
+        if (!startDate) {
+            alert("Please select a start date.");
+            return;
+        }
+        if (endDate && new Date(endDate) < new Date(startDate)) {
+            alert("End date cannot be before start date.");
+            return;
+        }
+        if (type === 'private' && !selectedTime) {
+            alert("Please select a time slot.");
             return;
         }
         setStep('payment');
@@ -87,24 +154,50 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
     const handleConfirmPayment = async () => {
         setIsProcessing(true);
         try {
+            const count = calculateSessionCount();
+            const start = new Date(startDate);
+            const end = endDate ? new Date(endDate) : new Date(startDate);
             const total = calculateTotal();
-            const bookingPayload: Partial<Booking> = {
-                gymId: gym.id,
-                gymName: gym.name,
-                userId: user.id,
-                userName: user.name,
-                date: date,
-                type: type,
-                trainerId: selectedTrainer?.id || undefined,
-                trainerName: selectedTrainer?.name,
-                totalPrice: total,
-                commissionPaidTo: referralCode || undefined,
-                commissionAmount: referralCode ? total * 0.10 : 0, // 10% Commission
-                status: 'confirmed'
-            };
+            const pricePerSession = total / count;
 
-            const newBooking = await createBooking(bookingPayload);
-            setBookings(prev => [...prev, { ...bookingPayload, id: newBooking.id, status: 'confirmed' } as Booking]);
+            // Generate Requests
+            const bookingPromises = [];
+
+            let current = new Date(start);
+            while (current <= end) {
+                const dateStr = current.toISOString().split('T')[0];
+
+                const bookingPayload: Partial<Booking> = {
+                    gymId: gym.id,
+                    gymName: gym.name,
+                    userId: user.id,
+                    userName: user.name,
+                    date: dateStr,
+                    type: type,
+                    trainerId: selectedTrainer?.id || undefined,
+                    trainerName: selectedTrainer?.name,
+                    startTime: selectedTime?.start,
+                    endTime: selectedTime?.end,
+                    totalPrice: Math.round(pricePerSession),
+                    commissionPaidTo: referralCode || undefined,
+                    commissionAmount: referralCode ? Math.round(pricePerSession * 0.10) : 0,
+                    status: 'confirmed'
+                };
+                bookingPromises.push(createBooking(bookingPayload));
+
+                // Increment Loop
+                if (type === 'standard') {
+                    current.setDate(current.getDate() + 1);
+                } else {
+                    current.setDate(current.getDate() + 7);
+                }
+            }
+
+            await Promise.all(bookingPromises);
+
+            // Optimistic update (might spam local state if many days, but okay for now)
+            // Ideally we re-fetch bookings in Dashboard. 
+            // We won't update local 'bookings' prop here significantly since we redirect anyway.
 
             setIsProcessing(false);
             navigate('/dashboard');
@@ -160,13 +253,34 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                             <div className="space-y-8 mb-12 animate-reveal">
                                 {/* Date Selection */}
                                 <div className="space-y-3">
-                                    <label className="font-mono text-xs font-bold text-brand-blue block">01 // SELECT DATE</label>
-                                    <input
-                                        type="date"
-                                        value={date}
-                                        onChange={(e) => setDate(e.target.value)}
-                                        className="w-full bg-brand-bone border-2 border-gray-200 p-4 font-mono text-brand-charcoal focus:border-brand-blue focus:outline-none transition-colors"
-                                    />
+                                    <label className="font-mono text-xs font-bold text-brand-blue block">01 // SELECT DATES</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <span className="text-[10px] font-mono text-gray-400 block mb-1">CHECK-IN</span>
+                                            <input
+                                                type="date"
+                                                value={startDate}
+                                                onChange={(e) => {
+                                                    setStartDate(e.target.value);
+                                                    if (!endDate) setEndDate(e.target.value);
+                                                }}
+                                                className="w-full bg-brand-bone border-2 border-gray-200 p-4 font-mono text-brand-charcoal text-xs focus:border-brand-blue focus:outline-none transition-colors"
+                                            />
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-mono text-gray-400 block mb-1">CHECK-OUT</span>
+                                            <input
+                                                type="date"
+                                                value={endDate}
+                                                min={startDate}
+                                                onChange={(e) => setEndDate(e.target.value)}
+                                                className="w-full bg-brand-bone border-2 border-gray-200 p-4 font-mono text-brand-charcoal text-xs focus:border-brand-blue focus:outline-none transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="text-right font-mono text-xs font-bold text-brand-red">
+                                        {type === 'standard' ? 'DURATION:' : 'SESSIONS:'} {calculateSessionCount()} {type === 'standard' ? 'DAYS' : 'TIMES (WEEKLY)'}
+                                    </div>
                                 </div>
 
                                 {/* Class Type */}
@@ -211,11 +325,40 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                             ))}
                                         </div>
                                     </div>
+
+                                )}
+
+                                {/* Time Selection (Private Only) */}
+                                {type === 'private' && selectedTrainer && startDate && (
+                                    <div className="space-y-3 animate-reveal">
+                                        <label className="font-mono text-xs font-bold text-brand-blue block">04 // SELECT TIME SLOT ({getDayName(startDate)})</label>
+                                        <p className="text-[10px] text-gray-400 font-mono -mt-2 mb-2">*Time slot applies to all {calculateSessionCount()} sessions</p>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                            {availableSlots.length === 0 ? (
+                                                <div className="col-span-full font-mono text-xs text-gray-400 p-4 border border-dashed border-gray-300 text-center">
+                                                    NO SLOTS AVAILABLE ON THIS DAY
+                                                </div>
+                                            ) : (
+                                                availableSlots.map(slot => (
+                                                    <button
+                                                        key={slot.id}
+                                                        onClick={() => setSelectedTime({ start: slot.startTime, end: slot.endTime })}
+                                                        className={`p-3 font-mono text-xs font-bold border-2 transition-colors ${selectedTime?.start === slot.startTime && selectedTime?.end === slot.endTime
+                                                            ? 'bg-brand-charcoal text-white border-brand-charcoal'
+                                                            : 'bg-white border-gray-200 hover:border-brand-blue text-brand-charcoal'
+                                                            }`}
+                                                    >
+                                                        {slot.startTime} - {slot.endTime}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
 
                                 <div className="pt-4 border-t-2 border-dashed border-gray-200">
                                     <div className="flex justify-between items-end">
-                                        <Mono className="text-gray-500">Projected Total</Mono>
+                                        <Mono className="text-gray-500">Projected Total ({calculateSessionCount()} {type === 'standard' ? 'Days' : 'Sessions'})</Mono>
                                         <div className="text-3xl font-black text-gray-400">
                                             ฿{calculateTotal().toLocaleString()}
                                         </div>
@@ -241,8 +384,8 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                             <span className="font-bold">{gym.name}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-gray-500">Date</span>
-                                            <span className="font-bold">{date}</span>
+                                            <span className="text-gray-500">Duration</span>
+                                            <span className="font-bold">{startDate} to {endDate} ({calculateSessionCount()} {type === 'standard' ? 'Days' : 'Sessions'})</span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="text-gray-500">Type</span>
@@ -252,6 +395,12 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                             <div className="flex justify-between text-brand-blue">
                                                 <span className="">Trainer</span>
                                                 <span className="font-bold">{selectedTrainer.name}</span>
+                                            </div>
+                                        )}
+                                        {selectedTime && (
+                                            <div className="flex justify-between text-brand-blue">
+                                                <span className="">Time</span>
+                                                <span className="font-bold">{selectedTime.start} - {selectedTime.end} {type === 'standard' ? '(Daily)' : '(Weekly)'}</span>
                                             </div>
                                         )}
                                     </div>
@@ -317,7 +466,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 

@@ -1,6 +1,6 @@
 
 import { supabase } from '../lib/supabaseClient';
-import { Gym, Booking, User, Trainer } from '../lib/types';
+import { Gym, Booking, User, Trainer, TrainerSchedule } from '../lib/types';
 
 // --- Gym Services ---
 
@@ -171,6 +171,54 @@ export const deleteTrainer = async (id: string) => {
         .eq('id', id);
 
     if (error) throw error;
+    if (error) throw error;
+};
+
+export const getTrainerSchedules = async (trainerId: string): Promise<TrainerSchedule[]> => {
+    const { data, error } = await supabase
+        .from('trainer_schedules')
+        .select('*')
+        .eq('trainer_id', trainerId);
+
+    if (error) {
+        console.error('Error fetching schedules:', error);
+        return [];
+    }
+
+    return data.map((s: any) => ({
+        id: s.id,
+        trainerId: s.trainer_id,
+        dayOfWeek: s.day_of_week,
+        startTime: s.start_time,
+        endTime: s.end_time
+    }));
+};
+
+export const createTrainerSchedule = async (schedule: Partial<TrainerSchedule>) => {
+    const dbSchedule = {
+        trainer_id: schedule.trainerId,
+        day_of_week: schedule.dayOfWeek,
+        start_time: schedule.startTime,
+        end_time: schedule.endTime
+    };
+
+    const { data, error } = await supabase
+        .from('trainer_schedules')
+        .insert(dbSchedule)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const deleteTrainerSchedule = async (id: string) => {
+    const { error } = await supabase
+        .from('trainer_schedules')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
 };
 
 // --- Booking Services ---
@@ -185,7 +233,9 @@ export const createBooking = async (booking: Partial<Booking>) => {
         type: booking.type,
         total_price: booking.totalPrice,
         status: 'confirmed',
-        commission_amount: booking.commissionAmount || 0
+        commission_amount: booking.commissionAmount || 0,
+        start_time: booking.startTime,
+        end_time: booking.endTime
     };
 
     const { data, error } = await supabase
@@ -206,7 +256,8 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
         .select(`
       *,
       gym:gyms (name),
-      trainer:trainers (name)
+      trainer:trainers (name),
+      user:users!bookings_user_id_fkey (name)
     `)
         .eq('user_id', userId);
 
@@ -220,14 +271,116 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
         gymId: b.gym_id,
         gymName: b.gym?.name || 'Unknown Gym',
         userId: b.user_id,
-        userName: 'Me', // Ideally fetch user name or get from context
+        userName: b.user?.name || 'Unknown User',
         date: b.date,
         type: b.type,
         trainerId: b.trainer_id,
         trainerName: b.trainer?.name,
         totalPrice: b.total_price,
         status: b.status,
-        commissionAmount: b.commission_amount
+        commissionAmount: b.commission_amount,
+        startTime: b.start_time,
+        endTime: b.end_time
+    }));
+};
+
+export const getAllBookings = async (): Promise<Booking[]> => {
+    const { data, error } = await supabase
+        .from('bookings')
+        .select(`
+      *,
+      gym:gyms (name),
+      trainer:trainers (name),
+      user:users!bookings_user_id_fkey (name)
+    `)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching all bookings:', error);
+        return [];
+    }
+
+    return data.map((b: any) => ({
+        id: b.id,
+        gymId: b.gym_id,
+        gymName: b.gym?.name || 'Unknown Gym',
+        userId: b.user_id,
+        userName: b.user?.name || 'Unknown User',
+        date: b.date,
+        type: b.type,
+        trainerId: b.trainer_id,
+        trainerName: b.trainer?.name,
+        totalPrice: b.total_price,
+        status: b.status,
+        commissionAmount: b.commission_amount,
+        startTime: b.start_time,
+        endTime: b.end_time
+    }));
+};
+
+export const getTrainerBookings = async (trainerId: string, date: string): Promise<Booking[]> => {
+    const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('trainer_id', trainerId)
+        .eq('date', date)
+        .neq('status', 'cancelled');
+
+    if (error) {
+        console.error('Error checking availability:', error);
+        return [];
+    }
+
+    return data.map((b: any) => ({
+        id: b.id,
+        gymId: b.gym_id,
+        gymName: '',
+        userId: b.user_id,
+        userName: '',
+        date: b.date,
+        type: b.type,
+        trainerId: b.trainer_id,
+        trainerName: '',
+        totalPrice: b.total_price,
+        status: b.status,
+        commissionAmount: b.commission_amount,
+        startTime: b.start_time,
+        endTime: b.end_time
+    }));
+};
+
+export const getGymBookings = async (gymId: string): Promise<Booking[]> => {
+    const { data, error } = await supabase
+        .from('bookings')
+        .select(`
+            *,
+            gym:gyms (name),
+            trainer:trainers (name),
+            user:users!bookings_user_id_fkey (name)
+        `)
+        .eq('gym_id', gymId)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching gym bookings:', error);
+        return [];
+    }
+
+    return data.map((b: any) => ({
+        id: b.id,
+        gymId: b.gym_id,
+        gymName: b.gym?.name || 'Unknown Gym',
+        userId: b.user_id,
+        userName: b.user?.name || 'Unknown User',
+        date: b.date,
+        type: b.type,
+        trainerId: b.trainer_id,
+        trainerName: b.trainer?.name,
+        totalPrice: b.total_price,
+        status: b.status,
+        commissionAmount: b.commission_amount,
+        startTime: b.start_time,
+        endTime: b.end_time
     }));
 };
 
@@ -348,5 +501,30 @@ export const deleteAnnouncement = async (id: string) => {
         .eq('id', id);
 
     if (error) throw error;
+};
+
+// --- User Services ---
+export const getAllUsers = async (): Promise<User[]> => {
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching users:', error);
+        return [];
+    }
+
+    return data.map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        avatar: u.avatar_url,
+        isAffiliate: u.is_affiliate,
+        affiliateEarnings: u.affiliate_earnings,
+        affiliateStatus: u.affiliate_status,
+        affiliateCode: u.affiliate_code
+    }));
 };
 

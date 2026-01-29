@@ -7,6 +7,8 @@ import AffiliateTracker from './components/AffiliateTracker';
 import Navbar from './components/Navbar';
 import Chatbot from './components/Chatbot';
 import AdminDashboard from './components/AdminDashboard';
+import OwnerDashboard from './components/OwnerDashboard'; // Import new component
+import AnalyticsDashboard from './components/AnalyticsDashboard'; // New Import
 import BookingPage from './components/BookingPage';
 
 import { BOOKINGS, AFFILIATE_APPLICATIONS } from './lib/data';
@@ -19,7 +21,9 @@ import {
   getAffiliateApplications,
   updateAffiliateApplicationStatus,
   updateUserAffiliateStatus,
-  getAnnouncements // Added import
+  getAnnouncements, // Added import
+  getAllBookings,
+  getGymBookings
 } from './services/dataService';
 import { getCurrentUser } from './services/authService';
 import { supabase } from './lib/supabaseClient';
@@ -330,49 +334,8 @@ const CustomerDashboard: React.FC<{ user: User; bookings: Booking[]; requestAffi
   );
 };
 
-const OwnerDashboard: React.FC<{ user: User; gyms: Gym[]; updateGym: (gym: Gym) => void }> = ({ user, gyms, updateGym }) => {
-  const myGym = gyms.find(g => g.ownerId === user.id);
-  if (!myGym) return <div className="p-12 font-mono">SYSTEM ERROR: GYM NOT FOUND</div>;
+// Inline OwnerDashboard removed in favor of external component
 
-  return (
-    <DashboardContainer title={myGym.name} subtitle="Facility Management">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-        <div className="bg-white border-2 border-brand-charcoal p-6">
-          <Mono className="text-brand-blue">Standard Rate</Mono>
-          <div className="text-4xl font-black mt-2">฿{myGym.basePrice}</div>
-        </div>
-        <div className="bg-white border-2 border-brand-charcoal p-6">
-          <Mono className="text-brand-blue">Roster Size</Mono>
-          <div className="text-4xl font-black mt-2">{myGym.trainers.length} <span className="text-lg text-gray-400">KRU</span></div>
-        </div>
-        <div
-          onClick={() => updateGym({ ...myGym, isFlashSale: !myGym.isFlashSale })}
-          className={`p-6 border-2 border-brand-charcoal cursor-pointer transition-colors ${myGym.isFlashSale ? 'bg-brand-red text-white' : 'bg-white hover:bg-gray-50'}`}
-        >
-          <Mono className={myGym.isFlashSale ? "text-brand-bone" : "text-brand-blue"}>Promotion Status</Mono>
-          <div className="text-4xl font-black mt-2 uppercase">{myGym.isFlashSale ? 'Active' : 'Offline'}</div>
-        </div>
-      </div>
-
-      <BlockTable title="Trainer Roster">
-        <div className="divide-y-2 divide-gray-100">
-          {myGym.trainers.map(t => (
-            <div key={t.id} className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-6">
-                <img src={t.image} className="w-16 h-16 object-cover grayscale border border-brand-charcoal" />
-                <div>
-                  <div className="font-black text-lg uppercase">{t.name}</div>
-                  <Mono className="text-brand-blue">{t.specialty}</Mono>
-                </div>
-              </div>
-              <div className="font-mono font-bold">+฿{t.pricePerSession}</div>
-            </div>
-          ))}
-        </div>
-      </BlockTable>
-    </DashboardContainer>
-  );
-};
 
 const App: React.FC = () => {
   /* Auth State */
@@ -435,16 +398,30 @@ const App: React.FC = () => {
         ]);
 
         if (mounted) {
+          let bookingsToShow = userBookings;
+
           if (fullUser) {
             setActiveUser(fullUser);
-            // If Admin, fetch all applications
-            if (fullUser.role === 'admin') {
+            // If Admin, fetch all applications & ALL bookings
+            // If Admin OR Owner (Super User), fetch all applications & ALL bookings for now
+            if (fullUser.role === 'admin' || fullUser.role === 'owner') {
+              bookingsToShow = await getAllBookings();
               getAffiliateApplications().then(apps => {
                 if (mounted) setApplications(apps);
               });
             }
+            // Logic for specific "Gym Owner" scoped dashboard disabled temporarily as per request
+            /* 
+            else if (fullUser.role === 'owner') {
+               const latestGyms = await getGyms();
+               const myGym = latestGyms.find(g => g.ownerId === fullUser.id);
+               if (myGym) {
+                  bookingsToShow = await getGymBookings(myGym.id);
+               }
+            }
+            */
           }
-          setBookings(userBookings);
+          setBookings(bookingsToShow);
         }
       } catch (err) {
         console.warn("Failed to load user data", err);
@@ -541,8 +518,9 @@ const App: React.FC = () => {
             <Route path="/" element={<HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/booking/:gymId" element={<BookingPage gyms={gyms} user={activeUser} setBookings={setBookings} />} />
             <Route path="/dashboard" element={activeUser?.role === 'customer' ? <CustomerDashboard user={activeUser} bookings={bookings} requestAffiliate={handleAffiliateRequest} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
-            <Route path="/owner" element={activeUser?.role === 'owner' ? <OwnerDashboard user={activeUser} gyms={gyms} updateGym={handleUpdateGym} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
+            <Route path="/owner" element={activeUser?.role === 'owner' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/admin" element={activeUser?.role === 'admin' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
+            <Route path="/analytics" element={(activeUser?.role === 'admin' || activeUser?.role === 'owner') ? <AnalyticsDashboard bookings={bookings} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
           </Routes>
         </main>
 

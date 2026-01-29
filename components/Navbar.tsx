@@ -36,12 +36,22 @@ const Navbar: React.FC<NavbarProps> = ({ activeUser, onLogout }) => {
             <Link to="/" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Gyms</Link>
             <Link to="/" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Camps</Link>
             {activeUser && (
-              <Link
-                to={activeUser.role === 'customer' ? '/dashboard' : activeUser.role === 'owner' ? '/owner' : '/admin'}
-                className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors"
-              >
-                Dashboard
-              </Link>
+              <>
+                <Link
+                  to={activeUser.role === 'customer' ? '/dashboard' : activeUser.role === 'owner' ? '/owner' : '/admin'}
+                  className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors"
+                >
+                  Dashboard
+                </Link>
+                {(activeUser.role === 'admin' || activeUser.role === 'owner') && (
+                  <Link
+                    to="/analytics"
+                    className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors"
+                  >
+                    Analytics
+                  </Link>
+                )}
+              </>
             )}
           </div>
 
