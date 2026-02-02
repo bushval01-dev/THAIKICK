@@ -110,3 +110,18 @@ create table public.trainer_schedules (
 alter table public.bookings 
 add column start_time time,
 add column end_time time;
+
+-- Courses Table (Flexible Course Design)
+create table public.courses (
+  id uuid default uuid_generate_v4() primary key,
+  gym_id uuid references public.gyms(id) not null,
+  title text not null,
+  description text,
+  price numeric not null,
+  duration text,
+  max_students integer,
+  design_data jsonb default '{}'::jsonb, -- Flexible structure for modules, daily schedule, etc.
+  image_url text,
+  is_active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);

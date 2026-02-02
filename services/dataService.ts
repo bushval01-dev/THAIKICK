@@ -1,6 +1,6 @@
 
 import { supabase } from '../lib/supabaseClient';
-import { Gym, Booking, User, Trainer, TrainerSchedule } from '../lib/types';
+import { Gym, Booking, User, Trainer, TrainerSchedule, Course } from '../lib/types';
 
 // --- Gym Services ---
 
@@ -528,3 +528,85 @@ export const getAllUsers = async (): Promise<User[]> => {
     }));
 };
 
+
+// --- Course Services ---
+
+export const getCourses = async (): Promise<Course[]> => {
+    const { data, error } = await supabase
+        .from('courses')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching courses:', error);
+        return [];
+    }
+
+    return data.map((c: any) => ({
+        id: c.id,
+        gymId: c.gym_id,
+        title: c.title,
+        description: c.description,
+        price: c.price,
+        duration: c.duration,
+        maxStudents: c.max_students,
+        designData: c.design_data,
+        imageUrl: c.image_url,
+        isActive: c.is_active
+    }));
+};
+
+export const createCourse = async (course: Partial<Course>) => {
+    const dbCourse = {
+        gym_id: course.gymId,
+        title: course.title,
+        description: course.description,
+        price: course.price,
+        duration: course.duration,
+        max_students: course.maxStudents,
+        design_data: course.designData,
+        image_url: course.imageUrl,
+        is_active: true
+    };
+
+    const { data, error } = await supabase
+        .from('courses')
+        .insert(dbCourse)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const updateCourse = async (id: string, course: Partial<Course>) => {
+    const dbCourse: any = {};
+    if (course.gymId) dbCourse.gym_id = course.gymId;
+    if (course.title) dbCourse.title = course.title;
+    if (course.description) dbCourse.description = course.description;
+    if (course.price) dbCourse.price = course.price;
+    if (course.duration) dbCourse.duration = course.duration;
+    if (course.maxStudents) dbCourse.max_students = course.maxStudents;
+    if (course.designData) dbCourse.design_data = course.designData;
+    if (course.imageUrl) dbCourse.image_url = course.imageUrl;
+    if (course.isActive !== undefined) dbCourse.is_active = course.isActive;
+
+    const { data, error } = await supabase
+        .from('courses')
+        .update(dbCourse)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const deleteCourse = async (id: string) => {
+    const { error } = await supabase
+        .from('courses')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
+};

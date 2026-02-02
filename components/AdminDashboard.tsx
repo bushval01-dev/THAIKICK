@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus, Calendar, Clock } from 'lucide-react';
+import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus, Calendar, Clock, BookOpen, Layers } from 'lucide-react';
 import { USERS } from '../lib/auth-data';
-import { Booking, AffiliateApplication, Announcement, Gym, Trainer, TrainerSchedule, User } from '../lib/types';
-import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer, getTrainerSchedules, createTrainerSchedule, deleteTrainerSchedule, getAllUsers } from '../services/dataService';
+import { Booking, AffiliateApplication, Announcement, Gym, Trainer, TrainerSchedule, User, Course } from '../lib/types';
+import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer, getTrainerSchedules, createTrainerSchedule, deleteTrainerSchedule, getAllUsers, getCourses, createCourse, updateCourse, deleteCourse } from '../services/dataService';
 
 interface AdminDashboardProps {
   bookings: Booking[];
@@ -57,11 +57,78 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
   const [attendanceDate, setAttendanceDate] = useState<string>(''); // Default empty = All
   const [attendanceGymId, setAttendanceGymId] = useState<string>('all');
 
+  // Course Management State
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [isCourseFormOpen, setIsCourseFormOpen] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Partial<Course>>({ designData: { modules: [] } });
+
   useEffect(() => {
     loadNews();
     loadGyms();
     loadUsers();
+    loadCourses();
   }, []);
+
+  const loadCourses = async () => {
+    const data = await getCourses();
+    setCourses(data);
+  };
+
+  const handleSaveCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCourse.title || !editingCourse.gymId) return alert("Title and Gym are required");
+
+    try {
+      if (editingCourse.id) {
+        await updateCourse(editingCourse.id, editingCourse);
+      } else {
+        await createCourse(editingCourse);
+      }
+      setIsCourseFormOpen(false);
+      setEditingCourse({ designData: { modules: [] } });
+      await loadCourses();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save course");
+    }
+  };
+
+  const handleDeleteCourse = async (id: string) => {
+    if (!confirm("Delete this course?")) return;
+    try {
+      await deleteCourse(id);
+      await loadCourses();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const addModuleToCourse = () => {
+    const currentModules = editingCourse.designData?.modules || [];
+    const newModule = { title: "New Module", content: "" };
+    setEditingCourse({
+      ...editingCourse,
+      designData: { ...editingCourse.designData, modules: [...currentModules, newModule] }
+    });
+  };
+
+  const updateModule = (index: number, field: string, value: string) => {
+    const modules = [...(editingCourse.designData?.modules || [])];
+    modules[index] = { ...modules[index], [field]: value };
+    setEditingCourse({
+      ...editingCourse,
+      designData: { ...editingCourse.designData, modules }
+    });
+  };
+
+  const removeModule = (index: number) => {
+    const modules = [...(editingCourse.designData?.modules || [])];
+    modules.splice(index, 1);
+    setEditingCourse({
+      ...editingCourse,
+      designData: { ...editingCourse.designData, modules }
+    });
+  };
 
   const loadUsers = async () => {
     const data = await getAllUsers();
@@ -537,6 +604,122 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                   </div>
                 </div>
               ))}
+            </div>
+          </BlockTable>
+
+          {/* Course / Curriculum Management */}
+          <BlockTable title="Course Curriculum Design" icon={<BookOpen className="w-4 h-4" />}>
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <span className="font-mono text-xs text-brand-blue font-bold uppercase">Flexible Course Designer</span>
+              <button
+                onClick={() => { setEditingCourse({ designData: { modules: [] } }); setIsCourseFormOpen(true); }}
+                className="bg-brand-charcoal text-white px-3 py-1 font-mono text-xs font-bold uppercase flex items-center gap-2 hover:bg-brand-blue"
+              >
+                <Plus className="w-3 h-3" /> New Course
+              </button>
+            </div>
+
+            {isCourseFormOpen && (
+              <div className="p-6 bg-brand-bone border-b-2 border-brand-charcoal animate-reveal">
+                <form onSubmit={handleSaveCourse} className="space-y-4">
+                  <div className="flex justify-between items-center mb-2 border-b border-gray-300 pb-2">
+                    <h4 className="font-black uppercase text-sm">Course Metadata</h4>
+                    <button type="button" onClick={() => setIsCourseFormOpen(false)} className="text-xs font-mono underline hover:text-brand-red">Close</button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold mb-1">Title</label>
+                      <input className="w-full border p-2 font-mono text-xs" value={editingCourse.title || ''} onChange={e => setEditingCourse({ ...editingCourse, title: e.target.value })} placeholder="e.g. 10-Day Intensive" required />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold mb-1">Gym Location</label>
+                      <select className="w-full border p-2 font-mono text-xs" value={editingCourse.gymId || ''} onChange={e => setEditingCourse({ ...editingCourse, gymId: e.target.value })} required>
+                        <option value="">Select Gym...</option>
+                        {gyms.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold mb-1">Price (THB)</label>
+                      <input type="number" className="w-full border p-2 font-mono text-xs" value={editingCourse.price || ''} onChange={e => setEditingCourse({ ...editingCourse, price: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold mb-1">Duration string</label>
+                      <input className="w-full border p-2 font-mono text-xs" value={editingCourse.duration || ''} onChange={e => setEditingCourse({ ...editingCourse, duration: e.target.value })} placeholder="e.g. 2 Weeks" />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-200">
+                    <div className="flex justify-between items-center mb-4">
+                      <label className="font-black uppercase text-sm flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-brand-blue" />
+                        Modules / Curriculum
+                      </label>
+                      <button type="button" onClick={addModuleToCourse} className="text-[10px] font-mono font-bold uppercase border border-brand-charcoal px-2 py-1 hover:bg-brand-charcoal hover:text-white transition-colors">
+                        + Add Module
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {editingCourse.designData?.modules?.map((mod: any, idx: number) => (
+                        <div key={idx} className="bg-white p-3 border border-gray-200 shadow-sm relative group">
+                          <button type="button" onClick={() => removeModule(idx)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500">
+                            <X className="w-3 h-3" />
+                          </button>
+                          <div className="mb-2">
+                            <input
+                              className="font-bold text-xs uppercase w-full bg-transparent outline-none border-b border-transparent focus:border-brand-blue mb-1"
+                              value={mod.title}
+                              onChange={e => updateModule(idx, 'title', e.target.value)}
+                              placeholder="Module Title"
+                            />
+                            <textarea
+                              className="w-full text-xs font-mono text-gray-500 bg-gray-50 p-2 outline-none h-16 resize-none"
+                              value={mod.content}
+                              onChange={e => updateModule(idx, 'content', e.target.value)}
+                              placeholder="Description or content..."
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      {(!editingCourse.designData?.modules || editingCourse.designData.modules.length === 0) && (
+                        <div className="text-center py-8 border-2 border-dashed border-gray-200 text-gray-300 font-mono text-xs">
+                          Start designing your course structure
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4 gap-2">
+                    <button type="button" onClick={() => setIsCourseFormOpen(false)} className="px-4 py-2 font-mono text-xs font-bold uppercase hover:bg-gray-200">Cancel</button>
+                    <button type="submit" className="px-6 py-2 bg-brand-charcoal text-white font-mono text-xs font-bold uppercase hover:bg-green-600 shadow-[4px_4px_0px_0px_#1A1A1A]">Save Course</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
+              {courses.map(c => (
+                <div key={c.id} className="p-4 flex justify-between items-center hover:bg-gray-50 group">
+                  <div>
+                    <div className="font-bold text-sm uppercase text-brand-charcoal">{c.title}</div>
+                    <div className="font-mono text-xs text-brand-blue flex items-center gap-2">
+                      {gyms.find(g => g.id === c.gymId)?.name || 'Unknown Gym'}
+                      <span className="text-gray-300">•</span>
+                      {c.designData?.modules?.length || 0} Modules
+                    </div>
+                  </div>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => { setEditingCourse(c); setIsCourseFormOpen(true); }} className="p-2 hover:bg-blue-100 text-brand-blue rounded">
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDeleteCourse(c.id)} className="p-2 hover:bg-red-100 text-brand-red rounded">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {courses.length === 0 && <div className="p-8 text-center font-mono text-xs text-gray-400">No courses defined</div>}
             </div>
           </BlockTable>
 

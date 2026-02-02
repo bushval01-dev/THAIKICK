@@ -76,3 +76,16 @@ export interface Announcement {
   isActive: boolean;
   createdAt: string;
 }
+
+export interface Course {
+  id: string;
+  gymId: string;
+  title: string;
+  description: string;
+  price: number;
+  duration?: string;
+  maxStudents?: number;
+  designData: any; // Flexible JSON structure
+  imageUrl?: string;
+  isActive: boolean;
+}
