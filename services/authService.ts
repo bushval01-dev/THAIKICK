@@ -69,3 +69,17 @@ export const getCurrentUser = async (): Promise<User | null> => {
 
     return mapUser(session.user, profile);
 };
+
+export const resetPasswordForEmail = async (email: string) => {
+    // Redirect to the same page but with a hash to detect recovery
+    const redirectTo = window.location.origin;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+    });
+    if (error) throw error;
+};
+
+export const updateUserPassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+};

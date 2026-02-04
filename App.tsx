@@ -10,6 +10,7 @@ import AdminDashboard from './components/AdminDashboard';
 import OwnerDashboard from './components/OwnerDashboard'; // Import new component
 import AnalyticsDashboard from './components/AnalyticsDashboard'; // New Import
 import BookingPage from './components/BookingPage';
+import ResetPasswordPage from './components/ResetPasswordPage';
 
 import { BOOKINGS, AFFILIATE_APPLICATIONS } from './lib/data';
 import { USERS } from './lib/auth-data';
@@ -105,6 +106,11 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
   const navigate = useNavigate();
   const [announcements, setAnnouncements] = useState<any[]>([]);
 
+  // Search State
+  const [locationInput, setLocationInput] = useState('');
+  // const [dateInput, setDateInput] = useState(''); 
+  const [disciplineInput, setDisciplineInput] = useState('');
+
   React.useEffect(() => {
     getAnnouncements().then(setAnnouncements);
   }, []);
@@ -112,6 +118,12 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
   const handleBookClick = (gym: Gym) => {
     navigate(`/booking/${gym.id}`);
   };
+
+  const filteredGyms = gyms.filter(gym => {
+    const matchLocation = gym.location.toLowerCase().includes(locationInput.toLowerCase()) || gym.name.toLowerCase().includes(locationInput.toLowerCase());
+    const matchDiscipline = disciplineInput === '' || gym.trainers.some(t => t.specialty.toLowerCase().includes(disciplineInput.toLowerCase()));
+    return matchLocation && matchDiscipline;
+  });
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-10 pb-20">
@@ -152,36 +164,59 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
 
       {/* Booking Bar Component */}
       <div className="bg-white border-2 border-brand-charcoal grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] shadow-[12px_12px_0px_0px_#3471AE]">
-        <BlockInput label="Location" placeholder="Where do you fight?" />
-        <BlockInput label="Dates" placeholder="Select timeframe" type="date" />
-        <BlockInput label="Discipline" placeholder="Muay Thai / Boxing" />
-        <button className="bg-brand-red text-white font-black uppercase text-lg px-10 py-6 md:py-0 hover:bg-brand-charcoal transition-colors h-full">
+        <BlockInput
+          label="Location / Name"
+          placeholder="Where do you fight?"
+          value={locationInput}
+          onChange={(e: any) => setLocationInput(e.target.value)}
+        />
+        <BlockInput
+          label="Discipline"
+          placeholder="Muay Thai / Boxing"
+          value={disciplineInput}
+          onChange={(e: any) => setDisciplineInput(e.target.value)}
+        />
+        <div className="p-6 border-b md:border-r border-brand-charcoal md:border-gray-200 bg-gray-50 flex flex-col justify-center">
+          <label className="block font-mono text-xs text-brand-blue font-bold mb-2 uppercase">RESULTS</label>
+          <div className="font-black text-xl">{filteredGyms.length} GYMS FOUND</div>
+        </div>
+        <button
+          className="bg-brand-red text-white font-black uppercase text-lg px-10 py-6 md:py-0 hover:bg-brand-charcoal transition-colors h-full"
+          onClick={() => {
+            const element = document.getElementById('gyms');
+            if (element) element.scrollIntoView({ behavior: 'smooth' });
+          }}
+        >
           Search
         </button>
       </div>
 
       {/* Grid */}
-      <div className="pt-24 pb-12 grid grid-cols-12 gap-y-12 md:gap-x-10">
+      <div id="gyms" className="pt-24 pb-12 grid grid-cols-12 gap-y-12 md:gap-x-10">
 
         {/* Dynamic Cards */}
-        {gyms.map((gym, index) => (
-          <React.Fragment key={gym.id}>
-            <GymCard gym={gym} onBook={() => handleBookClick(gym)} isLarge={index === 0} />
-            {/* Insert Canvas Block after first item */}
-            {index === 0 && (
-              <div className="col-span-12 md:col-span-6 bg-brand-blue text-white p-12 flex flex-col justify-center animate-reveal" style={{ animationDelay: '0.2s' }}>
-                <Mono className="text-brand-bone mb-4">Tradition</Mono>
-                <h2 className="text-5xl font-black mb-6 uppercase">The Art of Eight Limbs</h2>
-                <p className="opacity-90 leading-relaxed max-w-md mb-8">
-                  Booking a gym shouldn't be a fight. We connect practitioners with verified camps that respect the lineage of the sport.
-                </p>
-                <a href="#" className="font-mono underline text-sm uppercase">Read Heritage Guide</a>
-              </div>
-            )}
-          </React.Fragment>
-        ))}
-
-        {/* Fillers for the aesthetic if strictly 2 gyms */}
+        {filteredGyms.length > 0 ? (
+          filteredGyms.map((gym, index) => (
+            <React.Fragment key={gym.id}>
+              <GymCard gym={gym} onBook={() => handleBookClick(gym)} isLarge={index === 0} />
+              {/* Insert Canvas Block after first item */}
+              {index === 0 && (
+                <div className="col-span-12 md:col-span-6 bg-brand-blue text-white p-12 flex flex-col justify-center animate-reveal" style={{ animationDelay: '0.2s' }}>
+                  <Mono className="text-brand-bone mb-4">Tradition</Mono>
+                  <h2 className="text-5xl font-black mb-6 uppercase">The Art of Eight Limbs</h2>
+                  <p className="opacity-90 leading-relaxed max-w-md mb-8">
+                    Booking a gym shouldn't be a fight. We connect practitioners with verified camps that respect the lineage of the sport.
+                  </p>
+                  <a href="#" className="font-mono underline text-sm uppercase">Read Heritage Guide</a>
+                </div>
+              )}
+            </React.Fragment>
+          ))
+        ) : (
+          <div className="col-span-12 text-center py-20 font-mono text-gray-400 border-2 border-dashed border-gray-300">
+            NO GYMS FOUND MATCHING YOUR CRITERIA
+          </div>
+        )}
 
       </div>
     </div>
@@ -359,6 +394,58 @@ const App: React.FC = () => {
       setTimeout(() => setNotification(null), 5000);
     }
 
+    // Handle Password Recovery Event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        // Redirect to reset password page is handled via HashRouter generally, 
+        // but we can force it here if base URL landed on home.
+        // However, since we are using HashRouter, the link from email usually points to /#access_token=...
+        // Supabase automatically sets the session. We just need to detect we want to show the reset page.
+        // A simple way is to check the URL hash or let the user navigate, but for UX:
+        // We'll let the router handle a specific route '/reset-password' if we set up the email template to point there?
+        // OR we just rely on the user being logged in and maybe a special query param?
+        // Standard Supabase flow: Click Link -> App Opens -> 'PASSWORD_RECOVERY' event fires.
+        // So we should navigate to /reset-password
+        // Since we are outside Router context here (in App functional component but not under <Routes>), 
+        // we can't use useNavigate easily unless we restructure.
+        // BUT App IS inside HashRouter in the return but fetch logic is here.
+        // Actually, App is INSIDE HashRouter? No, HashRouter is inside App return.
+        // Wait, <HashRouter> is WRAPPING the content of App.
+        // So `useNavigate` can't be used at top level of App.
+
+        // Fix: We'll change the window location hash manualy
+        window.location.hash = '/reset-password';
+      }
+    });
+
+    // 0.5. Realtime Profile Sync (The "Pro" feature)
+    let profileSubscription: any = null;
+
+    const setupProfileSubscription = (userId: string) => {
+      // Clean up previous sub if any
+      if (profileSubscription) supabase.removeChannel(profileSubscription);
+
+      profileSubscription = supabase
+        .channel('public:users')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'users',
+            filter: `id=eq.${userId}`
+          },
+          (payload) => {
+            console.log("Realtime: User Profile Updated!", payload);
+            // Re-fetch clean user data when DB changes
+            supabase.auth.getSession().then(({ data: { session } }) => {
+              if (session) handleUserUpdate(session);
+            });
+          }
+        )
+        .subscribe();
+    };
+
     // 1. Fetch Gyms
     const fetchGyms = async () => {
       const data = await getGyms();
@@ -388,7 +475,10 @@ const App: React.FC = () => {
         affiliateStatus: 'none'
       };
 
-      if (mounted) setActiveUser(basicUser);
+      if (mounted) {
+        setActiveUser(basicUser);
+        setupProfileSubscription(session.user.id);
+      }
 
       try {
         // Parallel: Fetch Profile + Fetch Bookings
@@ -438,16 +528,19 @@ const App: React.FC = () => {
     });
 
     // Listen for changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       handleUserUpdate(session);
     });
 
-    // Override cleanup to handle subscription
+    // Clean up subscription
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
+      if (profileSubscription) supabase.removeChannel(profileSubscription);
     };
   }, []);
+
 
   const handleUpdateGym = (updatedGym: Gym) => {
     setGyms(gyms.map(g => g.id === updatedGym.id ? updatedGym : g));
@@ -520,7 +613,9 @@ const App: React.FC = () => {
             <Route path="/dashboard" element={activeUser?.role === 'customer' ? <CustomerDashboard user={activeUser} bookings={bookings} requestAffiliate={handleAffiliateRequest} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/owner" element={activeUser?.role === 'owner' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/admin" element={activeUser?.role === 'admin' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
+            <Route path="/admin" element={activeUser?.role === 'admin' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/analytics" element={(activeUser?.role === 'admin' || activeUser?.role === 'owner') ? <AnalyticsDashboard bookings={bookings} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
           </Routes>
         </main>
 

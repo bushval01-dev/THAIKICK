@@ -32,6 +32,7 @@ export interface Gym {
   trainers: Trainer[];
   isFlashSale: boolean;
   flashSaleDiscount: number;
+  affiliatePercentage?: number;
 }
 
 export interface Booking {
@@ -43,9 +44,11 @@ export interface Booking {
   date: string;
   startTime?: string;
   endTime?: string;
-  type: 'standard' | 'private';
+  type: 'standard' | 'private' | 'course';
   trainerId?: string;
   trainerName?: string;
+  courseId?: string;
+  courseTitle?: string;
   totalPrice: number;
   commissionPaidTo?: string;
   commissionAmount: number;

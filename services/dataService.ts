@@ -37,7 +37,8 @@ export const getGyms = async (): Promise<Gym[]> => {
             pricePerSession: t.price_per_session
         })),
         isFlashSale: gym.is_flash_sale,
-        flashSaleDiscount: gym.flash_sale_discount
+        flashSaleDiscount: gym.flash_sale_discount,
+        affiliatePercentage: gym.affiliate_percentage
     })) as unknown as Gym[];
 };
 
@@ -72,7 +73,8 @@ export const getGymById = async (id: string): Promise<Gym | null> => {
             pricePerSession: t.price_per_session
         })),
         isFlashSale: data.is_flash_sale,
-        flashSaleDiscount: data.flash_sale_discount
+        flashSaleDiscount: data.flash_sale_discount,
+        affiliatePercentage: data.affiliate_percentage
     } as unknown as Gym;
 };
 
@@ -82,9 +84,10 @@ export const createGym = async (gym: Partial<Gym>) => {
         name: gym.name,
         location: gym.location,
         description: gym.description,
-        images: gym.images,
-        base_price: gym.basePrice,
+        images: gym.images || [],
+        base_price: gym.basePrice ?? 0,
         owner_id: gym.ownerId, // Optional, might be null for admin created
+        affiliate_percentage: gym.affiliatePercentage || 0
     };
 
     const { data, error } = await supabase
@@ -103,7 +106,8 @@ export const updateGym = async (id: string, gym: Partial<Gym>) => {
     if (gym.location) dbGym.location = gym.location;
     if (gym.description) dbGym.description = gym.description;
     if (gym.images) dbGym.images = gym.images;
-    if (gym.basePrice) dbGym.base_price = gym.basePrice;
+    if (gym.basePrice !== undefined) dbGym.base_price = gym.basePrice;
+    if (gym.affiliatePercentage !== undefined) dbGym.affiliate_percentage = gym.affiliatePercentage;
 
     // Safety check just in case
     if (Object.keys(dbGym).length === 0) return;
@@ -235,7 +239,8 @@ export const createBooking = async (booking: Partial<Booking>) => {
         status: 'confirmed',
         commission_amount: booking.commissionAmount || 0,
         start_time: booking.startTime,
-        end_time: booking.endTime
+        end_time: booking.endTime,
+        course_id: booking.courseId
     };
 
     const { data, error } = await supabase
@@ -257,7 +262,8 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
       *,
       gym:gyms (name),
       trainer:trainers (name),
-      user:users!bookings_user_id_fkey (name)
+      user:users!bookings_user_id_fkey (name),
+      course:courses (title)
     `)
         .eq('user_id', userId);
 
@@ -280,7 +286,9 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
         status: b.status,
         commissionAmount: b.commission_amount,
         startTime: b.start_time,
-        endTime: b.end_time
+        endTime: b.end_time,
+        courseId: b.course_id,
+        courseTitle: b.course?.title
     }));
 };
 
@@ -291,7 +299,8 @@ export const getAllBookings = async (): Promise<Booking[]> => {
       *,
       gym:gyms (name),
       trainer:trainers (name),
-      user:users!bookings_user_id_fkey (name)
+      user:users!bookings_user_id_fkey (name),
+      course:courses (title)
     `)
         .order('created_at', { ascending: false });
 
@@ -314,7 +323,9 @@ export const getAllBookings = async (): Promise<Booking[]> => {
         status: b.status,
         commissionAmount: b.commission_amount,
         startTime: b.start_time,
-        endTime: b.end_time
+        endTime: b.end_time,
+        courseId: b.course_id,
+        courseTitle: b.course?.title
     }));
 };
 
@@ -345,7 +356,9 @@ export const getTrainerBookings = async (trainerId: string, date: string): Promi
         status: b.status,
         commissionAmount: b.commission_amount,
         startTime: b.start_time,
-        endTime: b.end_time
+        endTime: b.end_time,
+        courseId: b.course_id,
+        courseTitle: b.course?.title
     }));
 };
 
@@ -356,7 +369,8 @@ export const getGymBookings = async (gymId: string): Promise<Booking[]> => {
             *,
             gym:gyms (name),
             trainer:trainers (name),
-            user:users!bookings_user_id_fkey (name)
+            user:users!bookings_user_id_fkey (name),
+            course:courses (title)
         `)
         .eq('gym_id', gymId)
         .order('created_at', { ascending: false });
@@ -380,7 +394,9 @@ export const getGymBookings = async (gymId: string): Promise<Booking[]> => {
         status: b.status,
         commissionAmount: b.commission_amount,
         startTime: b.start_time,
-        endTime: b.end_time
+        endTime: b.end_time,
+        courseId: b.course_id,
+        courseTitle: b.course?.title
     }));
 };
 
@@ -452,6 +468,43 @@ export const updateUserAffiliateStatus = async (userId: string, isAffiliate: boo
     if (error) throw error;
 };
 
+// --- System Settings ---
+
+export const getSystemSetting = async (key: string): Promise<string | null> => {
+    const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', key)
+        .single();
+
+    if (error) {
+        console.error(`Error fetching setting ${key}:`, error);
+        return null;
+    }
+    return data.value;
+};
+
+export const updateSystemSetting = async (key: string, value: string) => {
+    const { error } = await supabase
+        .from('system_settings')
+        .update({ value })
+        .eq('key', key);
+
+    if (error) throw error;
+};
+
+export const validateAffiliateCode = async (code: string): Promise<boolean> => {
+    if (!code) return false;
+    // Use Security Definer RPC to check code without exposing users table
+    const { data, error } = await supabase.rpc('check_affiliate_code', { code });
+
+    if (error) {
+        console.error('Error validating code:', error);
+        return false;
+    }
+    return !!data;
+};
+
 // --- Announcement Services ---
 
 export const getAnnouncements = async () => {
@@ -515,6 +568,7 @@ export const getAllUsers = async (): Promise<User[]> => {
         return [];
     }
 
+
     return data.map((u: any) => ({
         id: u.id,
         email: u.email,
@@ -526,6 +580,15 @@ export const getAllUsers = async (): Promise<User[]> => {
         affiliateStatus: u.affiliate_status,
         affiliateCode: u.affiliate_code
     }));
+};
+
+export const updateUserRole = async (userId: string, role: string) => {
+    const { error } = await supabase
+        .from('users')
+        .update({ role })
+        .eq('id', userId);
+
+    if (error) throw error;
 };
 
 

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { Mail, Lock, User as UserIcon, X, Loader } from 'lucide-react';
-import { signIn, signUp } from '../services/authService';
+import { Mail, Lock, User as UserIcon, X, Loader, ArrowLeft } from 'lucide-react';
+import { signIn, signUp, resetPasswordForEmail } from '../services/authService';
 import { supabase } from '../lib/supabaseClient';
 
 interface AuthModalProps {
@@ -11,7 +11,12 @@ interface AuthModalProps {
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
-    const [isLogin, setIsLogin] = useState(true);
+    // Mode: 'login', 'signup', 'reset'
+    const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+    const isLogin = mode === 'login';
+
+    // Legacy support for internal logic (using mode now)
+    const setIsLogin = (val: boolean) => setMode(val ? 'login' : 'signup');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isLongWait, setIsLongWait] = useState(false);
@@ -39,7 +44,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
 
         try {
             let authPromise;
-            if (isLogin) {
+            if (mode === 'reset') {
+                await resetPasswordForEmail(email);
+                alert("Password reset link sent! Check your email.");
+                setMode('login');
+                setLoading(false);
+                return;
+            } else if (mode === 'login') {
                 // Safety: Clear any potential stale session state before logging in
                 await supabase.auth.signOut();
                 authPromise = signIn(email, password);
@@ -65,6 +76,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
             let msg = err.message || 'Authentication failed';
             if (msg.includes("Invalid login credentials")) msg = "Incorrect email or password.";
             if (msg.includes("Email not confirmed")) msg = "Please confirm your email address first.";
+            if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many requests")) msg = "Too many attempts. Please wait a few minutes before trying again.";
 
             setError(msg);
         } finally {
@@ -84,10 +96,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
 
                 <div className="mb-8">
                     <div className="font-mono text-xs font-bold text-brand-blue uppercase mb-2">
-                        {isLogin ? 'Welcome Back' : 'New Fighter'}
+                        {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'New Fighter' : 'Account Recovery'}
                     </div>
                     <h2 className="text-3xl font-black uppercase text-brand-charcoal">
-                        {isLogin ? 'Login' : 'Join Us'}
+                        {mode === 'login' ? 'Login' : mode === 'signup' ? 'Join Us' : 'Reset Password'}
                     </h2>
                 </div>
 
@@ -98,7 +110,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    {!isLogin && (
+                    {mode === 'signup' && (
                         <div className="space-y-2">
                             <label className="font-mono text-xs font-bold uppercase">Name</label>
                             <div className="relative">
@@ -130,27 +142,44 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="font-mono text-xs font-bold uppercase">Password</label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-brand-bone border-2 border-gray-200 p-3 pl-10 font-mono text-brand-charcoal focus:border-brand-blue focus:outline-none"
-                                placeholder="••••••••"
-                                required
-                            />
+                    {mode !== 'reset' && (
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                                <label className="font-mono text-xs font-bold uppercase">Password</label>
+                                {mode === 'login' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setMode('reset')}
+                                        className="font-mono text-[10px] text-brand-blue hover:underline uppercase"
+                                    >
+                                        Forgot Password?
+                                    </button>
+                                )}
+                            </div>
+                            <div className="relative">
+                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full bg-brand-bone border-2 border-gray-200 p-3 pl-10 font-mono text-brand-charcoal focus:border-brand-blue focus:outline-none"
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <button
                         type="submit"
                         disabled={loading}
                         className="w-full bg-brand-charcoal text-white font-black uppercase py-4 hover:bg-brand-blue transition-colors flex items-center justify-center gap-2"
                     >
-                        {loading ? <Loader className="w-4 h-4 animate-spin" /> : (isLogin ? 'Access System' : 'Create Account')}
+                        {loading ? <Loader className="w-4 h-4 animate-spin" /> : (
+                            mode === 'login' ? 'Access System' :
+                                mode === 'signup' ? 'Create Account' :
+                                    'Send Reset Link'
+                        )}
                     </button>
 
                     {isLongWait && loading && (
@@ -162,13 +191,24 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
                     )}
                 </form>
 
-                <div className="mt-6 text-center">
-                    <button
-                        onClick={() => setIsLogin(!isLogin)}
-                        className="font-mono text-xs text-gray-500 hover:text-brand-charcoal underline uppercase"
-                    >
-                        {isLogin ? "Need an account? Request Access" : "Have an account? Login"}
-                    </button>
+                <div className="mt-6 text-center space-y-2">
+                    {mode === 'reset' ? (
+                        <button
+                            type="button"
+                            onClick={() => setMode('login')}
+                            className="font-mono text-xs text-gray-500 hover:text-brand-charcoal underline uppercase flex items-center justify-center gap-1 mx-auto"
+                        >
+                            <ArrowLeft className="w-3 h-3" /> Back to Login
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                            className="font-mono text-xs text-gray-500 hover:text-brand-charcoal underline uppercase"
+                        >
+                            {mode === 'login' ? "Need an account? Request Access" : "Have an account? Login"}
+                        </button>
+                    )}
                 </div>
 
             </div>

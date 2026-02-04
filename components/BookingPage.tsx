@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Check, Shield, Lock, CreditCard, Tag } from 'lucide-react';
-import { Gym, User, Booking, Trainer, TrainerSchedule } from '../lib/types';
+import { ArrowLeft, Check, Shield, Lock, CreditCard, Tag, Sparkles } from 'lucide-react';
+import { Gym, User, Booking, Trainer, TrainerSchedule, Course } from '../lib/types';
 import { getReferralCode } from '../lib/affiliate';
-import { createBooking, getTrainerSchedules, getTrainerBookings } from '../services/dataService';
+import { createBooking, getTrainerSchedules, getTrainerBookings, getCourses, validateAffiliateCode, getSystemSetting } from '../services/dataService';
+import generatePayload from 'promptpay-qr';
+import { QRCodeSVG } from 'qrcode.react';
+import { PROMPTPAY_NUMBER } from '../lib/constants';
 
 interface BookingPageProps {
     gyms: Gym[];
@@ -26,13 +29,31 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
     const [step, setStep] = useState<'booking' | 'payment'>('booking');
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
-    const [type, setType] = useState<'standard' | 'private'>('standard');
+    const [type, setType] = useState<'standard' | 'private' | 'course'>('standard');
     const [selectedTrainer, setSelectedTrainer] = useState<Trainer | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+
+    // Course State
+    const [courses, setCourses] = useState<Course[]>([]);
+    const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
 
     // Affiliate State
     const [referralCode, setReferralCode] = useState<string>('');
     const [referralApplied, setReferralApplied] = useState(false);
+    const [codeValid, setCodeValid] = useState<boolean | null>(null);
+
+    const checkAffiliateCode = async () => {
+        if (!referralCode) {
+            setCodeValid(null);
+            return;
+        }
+        const isValid = await validateAffiliateCode(referralCode);
+        setCodeValid(isValid);
+    };
+
+    // Payment State
+    const [paymentMethod, setPaymentMethod] = useState<'card' | 'promptpay'>('card');
+    const [dynamicPromptPayNumber, setDynamicPromptPayNumber] = useState(PROMPTPAY_NUMBER);
 
     // Private Session State
     const [availableSlots, setAvailableSlots] = useState<TrainerSchedule[]>([]);
@@ -45,15 +66,16 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
 
     const calculateSessionCount = () => {
         if (!startDate) return 0;
+        if (type === 'course') return 1; // Course is a single unit
         if (!endDate) return 1;
+
         const start = new Date(startDate);
         const end = new Date(endDate);
 
         if (type === 'standard') {
-            // Standard: Every day
             const diffTime = Math.abs(end.getTime() - start.getTime());
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays + 1; // Inclusive
+            return diffDays + 1;
         } else {
             // Private: Weekly Recurrence
             let count = 0;
@@ -67,8 +89,16 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
     };
 
     useEffect(() => {
-        // For Private availability, we check the START date for reference schedule
-        // In a real app, we'd check every day in range, but for MVP we check the first day's schedule
+        // Fetch Courses for this Gym
+        const loadCourses = async () => {
+            if (!gymId) return;
+            const allCourses = await getCourses();
+            const gymCourses = allCourses.filter(c => c.gymId === gymId && c.isActive);
+            setCourses(gymCourses);
+        };
+        loadCourses();
+
+        // Private availability check
         if (type === 'private' && selectedTrainer && startDate) {
             const fetchSchedule = async () => {
                 const schedules = await getTrainerSchedules(selectedTrainer.id);
@@ -88,24 +118,32 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
             };
             fetchSchedule();
         }
-    }, [type, selectedTrainer, startDate]);
+    }, [type, selectedTrainer, startDate, gymId]);
 
     useEffect(() => {
-        // 1. Locate Gym
         const foundGym = gyms.find(g => g.id === gymId);
         if (foundGym) {
             setGym(foundGym);
         } else {
-            navigate('/'); // Fallback
+            navigate('/');
         }
 
-        // 2. Check Affiliate Cookie
         const code = getReferralCode();
         if (code) {
             setReferralCode(code);
-            setReferralApplied(true);
+            validateAffiliateCode(code).then(isValid => {
+                if (isValid) setReferralApplied(true);
+                setCodeValid(isValid);
+            });
         }
     }, [gymId, gyms, navigate]);
+
+    // Fetch PromptPay Number
+    useEffect(() => {
+        getSystemSetting('promptpay_number').then(num => {
+            if (num) setDynamicPromptPayNumber(num);
+        });
+    }, []);
 
     // Auth Guard
     if (!user) {
@@ -125,8 +163,9 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
 
     if (!gym) return null;
 
-    // Pricing Logic
     const calculateTotal = () => {
+        if (type === 'course' && selectedCourse) return selectedCourse.price;
+
         let oneSessionPrice = gym.basePrice;
         if (gym.isFlashSale) oneSessionPrice = oneSessionPrice * (1 - gym.flashSaleDiscount / 100);
         if (type === 'private' && selectedTrainer) oneSessionPrice += selectedTrainer.pricePerSession;
@@ -136,18 +175,15 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
     };
 
     const handleProceedToPayment = () => {
-        if (!startDate) {
-            alert("Please select a start date.");
-            return;
+        if (!startDate) return alert("Please select a start date.");
+
+        if (type === 'standard' || type === 'private') {
+            if (endDate && new Date(endDate) < new Date(startDate)) return alert("End date cannot be before start date.");
         }
-        if (endDate && new Date(endDate) < new Date(startDate)) {
-            alert("End date cannot be before start date.");
-            return;
-        }
-        if (type === 'private' && !selectedTime) {
-            alert("Please select a time slot.");
-            return;
-        }
+
+        if (type === 'private' && !selectedTime) return alert("Please select a time slot.");
+        if (type === 'course' && !selectedCourse) return alert("Please select a course.");
+
         setStep('payment');
     };
 
@@ -156,54 +192,67 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
         try {
             const count = calculateSessionCount();
             const start = new Date(startDate);
-            const end = endDate ? new Date(endDate) : new Date(startDate);
             const total = calculateTotal();
-            const pricePerSession = total / count;
+            const pricePerSession = type === 'course' ? total : total / count;
 
-            // Generate Requests
             const bookingPromises = [];
 
-            let current = new Date(start);
-            while (current <= end) {
-                const dateStr = current.toISOString().split('T')[0];
-
+            if (type === 'course') {
+                // Single Booking Record for Course
                 const bookingPayload: Partial<Booking> = {
                     gymId: gym.id,
                     gymName: gym.name,
                     userId: user.id,
                     userName: user.name,
-                    date: dateStr,
-                    type: type,
-                    trainerId: selectedTrainer?.id || undefined,
-                    trainerName: selectedTrainer?.name,
-                    startTime: selectedTime?.start,
-                    endTime: selectedTime?.end,
-                    totalPrice: Math.round(pricePerSession),
-                    commissionPaidTo: referralCode || undefined,
-                    commissionAmount: referralCode ? Math.round(pricePerSession * 0.10) : 0,
+                    date: startDate,
+                    type: 'course',
+                    courseId: selectedCourse?.id,
+                    courseTitle: selectedCourse?.title,
+                    totalPrice: total,
+                    commissionPaidTo: (referralCode && codeValid) ? referralCode : undefined,
+                    commissionAmount: (referralCode && codeValid) ? Math.round(total * ((gym.affiliatePercentage || 0) / 100)) : 0,
                     status: 'confirmed'
                 };
                 bookingPromises.push(createBooking(bookingPayload));
+            } else {
+                // Loop for sessions
+                const end = endDate ? new Date(endDate) : new Date(startDate);
+                let current = new Date(start);
+                while (current <= end) {
+                    const dateStr = current.toISOString().split('T')[0];
 
-                // Increment Loop
-                if (type === 'standard') {
-                    current.setDate(current.getDate() + 1);
-                } else {
-                    current.setDate(current.getDate() + 7);
+                    const bookingPayload: Partial<Booking> = {
+                        gymId: gym.id,
+                        gymName: gym.name,
+                        userId: user.id,
+                        userName: user.name,
+                        date: dateStr,
+                        type: type,
+                        trainerId: selectedTrainer?.id || undefined,
+                        trainerName: selectedTrainer?.name,
+                        startTime: selectedTime?.start,
+                        endTime: selectedTime?.end,
+                        totalPrice: Math.round(pricePerSession),
+                        commissionPaidTo: (referralCode && codeValid) ? referralCode : undefined,
+                        commissionAmount: (referralCode && codeValid) ? Math.round(pricePerSession * ((gym.affiliatePercentage || 0) / 100)) : 0,
+                        status: 'confirmed'
+                    };
+                    bookingPromises.push(createBooking(bookingPayload));
+
+                    if (type === 'standard') {
+                        current.setDate(current.getDate() + 1);
+                    } else {
+                        current.setDate(current.getDate() + 7);
+                    }
                 }
             }
 
             await Promise.all(bookingPromises);
-
-            // Optimistic update (might spam local state if many days, but okay for now)
-            // Ideally we re-fetch bookings in Dashboard. 
-            // We won't update local 'bookings' prop here significantly since we redirect anyway.
-
             setIsProcessing(false);
             navigate('/dashboard');
         } catch (error) {
             console.error("Booking Error:", error);
-            alert("Payment failed. Please try again.");
+            alert("Payment processing failed. Please try again or contact support.");
             setIsProcessing(false);
         }
     };
@@ -211,8 +260,6 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
     return (
         <div className="min-h-screen bg-brand-bone animate-reveal">
             <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-2 min-h-screen">
-
-                {/* Left Column: Visuals */}
                 <div className="relative h-[300px] lg:h-auto bg-gray-900 border-r-2 border-brand-charcoal order-1 lg:order-none">
                     <img
                         src={gym.images[0]}
@@ -232,13 +279,13 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                             </h1>
                             <div className="flex gap-4 text-gray-300 font-mono text-sm">
                                 <span>• Authentic Muay Thai</span>
-                                <span>• {gym.trainers.length} Trainers Available</span>
+                                <span>• {gym.trainers.length} Trainers</span>
+                                <span>• {courses.length} Courses</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Right Column: Interaction Terminal */}
                 <div className="bg-white flex flex-col justify-center p-8 lg:p-24 relative order-2 lg:order-none">
                     <div className="max-w-md w-full mx-auto">
                         <div className="mb-10 flex items-center justify-between border-b-2 border-brand-charcoal pb-4">
@@ -249,14 +296,35 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                         </div>
 
                         {step === 'booking' ? (
-                            // --- STEP 1: BOOKING DETAILS ---
                             <div className="space-y-8 mb-12 animate-reveal">
+
+                                {/* Class Type */}
+                                <div className="space-y-3">
+                                    <label className="font-mono text-xs font-bold text-brand-blue block">01 // SELECT EXPERIENCE</label>
+                                    <div className="flex gap-2 w-full">
+                                        <button onClick={() => setType('standard')} className={`flex-1 p-3 border-2 font-mono text-[10px] md:text-xs font-bold uppercase transition-all ${type === 'standard' ? 'border-brand-charcoal bg-brand-charcoal text-white shadow-[4px_4px_0px_0px_#3471AE]' : 'border-gray-200 text-gray-400 hover:border-brand-blue'}`}>
+                                            Daily
+                                        </button>
+                                        {gym.trainers.length > 0 && (
+                                            <button onClick={() => setType('private')} className={`flex-1 p-3 border-2 font-mono text-[10px] md:text-xs font-bold uppercase transition-all ${type === 'private' ? 'border-brand-charcoal bg-brand-charcoal text-white shadow-[4px_4px_0px_0px_#3471AE]' : 'border-gray-200 text-gray-400 hover:border-brand-blue'}`}>
+                                                Private
+                                            </button>
+                                        )}
+                                        {courses.length > 0 && (
+                                            <button onClick={() => setType('course')} className={`flex-1 p-3 border-2 font-mono text-[10px] md:text-xs font-bold uppercase transition-all flex items-center justify-center gap-1 ${type === 'course' ? 'border-brand-charcoal bg-brand-charcoal text-white shadow-[4px_4px_0px_0px_#3471AE]' : 'border-gray-200 text-gray-400 hover:border-brand-blue'}`}>
+                                                {courses.length > 0 && <span className="w-2 h-2 bg-brand-red rounded-full animate-pulse"></span>}
+                                                Course
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
                                 {/* Date Selection */}
                                 <div className="space-y-3">
-                                    <label className="font-mono text-xs font-bold text-brand-blue block">01 // SELECT DATES</label>
+                                    <label className="font-mono text-xs font-bold text-brand-blue block">02 // SELECT DATES</label>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <span className="text-[10px] font-mono text-gray-400 block mb-1">CHECK-IN</span>
+                                            <span className="text-[10px] font-mono text-gray-400 block mb-1">START DATE</span>
                                             <input
                                                 type="date"
                                                 value={startDate}
@@ -267,42 +335,27 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                                 className="w-full bg-brand-bone border-2 border-gray-200 p-4 font-mono text-brand-charcoal text-xs focus:border-brand-blue focus:outline-none transition-colors"
                                             />
                                         </div>
-                                        <div>
-                                            <span className="text-[10px] font-mono text-gray-400 block mb-1">CHECK-OUT</span>
-                                            <input
-                                                type="date"
-                                                value={endDate}
-                                                min={startDate}
-                                                onChange={(e) => setEndDate(e.target.value)}
-                                                className="w-full bg-brand-bone border-2 border-gray-200 p-4 font-mono text-brand-charcoal text-xs focus:border-brand-blue focus:outline-none transition-colors"
-                                            />
-                                        </div>
+                                        {type !== 'course' && (
+                                            <div>
+                                                <span className="text-[10px] font-mono text-gray-400 block mb-1">END DATE</span>
+                                                <input
+                                                    type="date"
+                                                    value={endDate}
+                                                    min={startDate}
+                                                    onChange={(e) => setEndDate(e.target.value)}
+                                                    className="w-full bg-brand-bone border-2 border-gray-200 p-4 font-mono text-brand-charcoal text-xs focus:border-brand-blue focus:outline-none transition-colors"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="text-right font-mono text-xs font-bold text-brand-red">
-                                        {type === 'standard' ? 'DURATION:' : 'SESSIONS:'} {calculateSessionCount()} {type === 'standard' ? 'DAYS' : 'TIMES (WEEKLY)'}
+                                        {type === 'standard' && `DURATION: ${calculateSessionCount()} DAYS`}
+                                        {type === 'private' && `SESSIONS: ${calculateSessionCount()} TIMES (WEEKLY)`}
+                                        {type === 'course' && `COURSE START: ${startDate || 'PENDING'}`}
                                     </div>
                                 </div>
 
-                                {/* Class Type */}
-                                <div className="space-y-3">
-                                    <label className="font-mono text-xs font-bold text-brand-blue block">02 // TRAINING TYPE</label>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <button
-                                            onClick={() => setType('standard')}
-                                            className={`p-4 border-2 font-mono text-xs font-bold uppercase transition-all ${type === 'standard' ? 'border-brand-charcoal bg-brand-charcoal text-white shadow-[4px_4px_0px_0px_#3471AE]' : 'border-gray-200 text-gray-400 hover:border-brand-blue'}`}
-                                        >
-                                            Standard
-                                        </button>
-                                        <button
-                                            onClick={() => setType('private')}
-                                            className={`p-4 border-2 font-mono text-xs font-bold uppercase transition-all ${type === 'private' ? 'border-brand-charcoal bg-brand-charcoal text-white shadow-[4px_4px_0px_0px_#3471AE]' : 'border-gray-200 text-gray-400 hover:border-brand-blue'}`}
-                                        >
-                                            Private
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Trainer Selection (Conditional) */}
+                                {/* Private Trainer Selection */}
                                 {type === 'private' && (
                                     <div className="space-y-3 animate-reveal">
                                         <label className="font-mono text-xs font-bold text-brand-blue block">03 // SELECT KRU</label>
@@ -325,14 +378,41 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                             ))}
                                         </div>
                                     </div>
-
                                 )}
 
-                                {/* Time Selection (Private Only) */}
+                                {/* Course Selection */}
+                                {type === 'course' && (
+                                    <div className="space-y-3 animate-reveal">
+                                        <label className="font-mono text-xs font-bold text-brand-blue block">03 // SELECT CURRICULUM</label>
+                                        <div className="space-y-2">
+                                            {courses.length === 0 ? (
+                                                <div className="p-4 border-2 border-dashed border-gray-300 text-center font-mono text-xs text-gray-400">
+                                                    NO COURSES AVAILABLE AT THIS BRANCH
+                                                </div>
+                                            ) : (
+                                                courses.map(c => (
+                                                    <div
+                                                        key={c.id}
+                                                        onClick={() => setSelectedCourse(c)}
+                                                        className={`p-4 border-2 cursor-pointer transition-colors group ${selectedCourse?.id === c.id ? 'border-brand-charcoal bg-brand-bone' : 'border-gray-100 hover:border-brand-blue'}`}
+                                                    >
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <div className="font-black text-sm uppercase">{c.title}</div>
+                                                            <div className="bg-brand-blue text-white text-[10px] font-bold px-2 py-1">{c.duration}</div>
+                                                        </div>
+                                                        <p className="font-mono text-[10px] text-gray-500 mb-2">{c.description?.slice(0, 100)}...</p>
+                                                        <div className="font-black text-lg text-brand-red">฿{c.price.toLocaleString()}</div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Private Time Selection */}
                                 {type === 'private' && selectedTrainer && startDate && (
                                     <div className="space-y-3 animate-reveal">
                                         <label className="font-mono text-xs font-bold text-brand-blue block">04 // SELECT TIME SLOT ({getDayName(startDate)})</label>
-                                        <p className="text-[10px] text-gray-400 font-mono -mt-2 mb-2">*Time slot applies to all {calculateSessionCount()} sessions</p>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                             {availableSlots.length === 0 ? (
                                                 <div className="col-span-full font-mono text-xs text-gray-400 p-4 border border-dashed border-gray-300 text-center">
@@ -358,7 +438,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
 
                                 <div className="pt-4 border-t-2 border-dashed border-gray-200">
                                     <div className="flex justify-between items-end">
-                                        <Mono className="text-gray-500">Projected Total ({calculateSessionCount()} {type === 'standard' ? 'Days' : 'Sessions'})</Mono>
+                                        <Mono className="text-gray-500">Projected Total</Mono>
                                         <div className="text-3xl font-black text-gray-400">
                                             ฿{calculateTotal().toLocaleString()}
                                         </div>
@@ -375,7 +455,6 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                         ) : (
                             // --- STEP 2: PAYMENT PAGE ---
                             <div className="space-y-8 mb-12 animate-reveal">
-                                {/* Order Summary */}
                                 <div className="bg-brand-bone p-6 border-2 border-brand-charcoal">
                                     <h3 className="font-black uppercase text-sm mb-4 border-b border-brand-charcoal pb-2">Order Summary</h3>
                                     <div className="space-y-2 font-mono text-sm">
@@ -384,9 +463,31 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                             <span className="font-bold">{gym.name}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-gray-500">Duration</span>
-                                            <span className="font-bold">{startDate} to {endDate} ({calculateSessionCount()} {type === 'standard' ? 'Days' : 'Sessions'})</span>
+                                            <span className="text-gray-500">Start Date</span>
+                                            <span className="font-bold">{startDate}</span>
                                         </div>
+
+                                        {/* Dynamic Details based on Type */}
+                                        {type === 'standard' && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">End Date</span>
+                                                <span className="font-bold">{endDate} ({calculateSessionCount()} Days)</span>
+                                            </div>
+                                        )}
+
+                                        {type === 'course' && selectedCourse && (
+                                            <>
+                                                <div className="flex justify-between text-brand-blue">
+                                                    <span>Program</span>
+                                                    <span className="font-bold">{selectedCourse.title}</span>
+                                                </div>
+                                                <div className="flex justify-between text-gray-500">
+                                                    <span>Duration</span>
+                                                    <span>{selectedCourse.duration}</span>
+                                                </div>
+                                            </>
+                                        )}
+
                                         <div className="flex justify-between">
                                             <span className="text-gray-500">Type</span>
                                             <span className="font-bold uppercase">{type}</span>
@@ -397,12 +498,6 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                                 <span className="font-bold">{selectedTrainer.name}</span>
                                             </div>
                                         )}
-                                        {selectedTime && (
-                                            <div className="flex justify-between text-brand-blue">
-                                                <span className="">Time</span>
-                                                <span className="font-bold">{selectedTime.start} - {selectedTime.end} {type === 'standard' ? '(Daily)' : '(Weekly)'}</span>
-                                            </div>
-                                        )}
                                     </div>
                                     <div className="mt-4 pt-4 border-t-2 border-dashed border-brand-charcoal flex justify-between items-end">
                                         <span className="font-black uppercase">Total Due</span>
@@ -410,7 +505,6 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                     </div>
                                 </div>
 
-                                {/* Affiliate Code Input */}
                                 <div>
                                     <label className="font-mono text-xs font-bold text-brand-blue block mb-2">PARTNER CODE (OPTIONAL)</label>
                                     <div className="flex gap-2">
@@ -418,26 +512,75 @@ const BookingPage: React.FC<BookingPageProps> = ({ gyms, user, setBookings }) =>
                                             type="text"
                                             placeholder="Enter Code"
                                             value={referralCode || ''}
-                                            onChange={(e) => setReferralCode(e.target.value)}
-                                            className="flex-1 bg-white border-2 border-gray-200 p-3 font-mono uppercase focus:border-brand-blue focus:outline-none"
+                                            onChange={(e) => {
+                                                setReferralCode(e.target.value);
+                                                setCodeValid(null);
+                                                setReferralApplied(false);
+                                            }}
+                                            className={`flex-1 bg-white border-2 p-3 font-mono uppercase focus:outline-none ${codeValid === true ? 'border-green-500 text-green-700' :
+                                                codeValid === false ? 'border-red-500 text-red-700' :
+                                                    'border-gray-200 focus:border-brand-blue'
+                                                }`}
                                         />
-                                        <div className="bg-gray-100 border-2 border-gray-200 px-4 flex items-center justify-center">
-                                            <Tag className="w-4 h-4 text-gray-400" />
-                                        </div>
+                                        <button
+                                            onClick={checkAffiliateCode}
+                                            disabled={!referralCode}
+                                            className={`border-2 px-4 flex items-center justify-center font-bold uppercase text-xs transition-colors ${codeValid === true ? 'bg-green-500 border-green-500 text-white' :
+                                                codeValid === false ? 'bg-red-500 border-red-500 text-white' :
+                                                    'bg-gray-100 border-gray-200 text-gray-500 hover:bg-brand-charcoal hover:border-brand-charcoal hover:text-white'
+                                                }`}
+                                        >
+                                            {codeValid === true ? 'APPLIED' : codeValid === false ? 'INVALID' : 'CHECK'}
+                                        </button>
                                     </div>
                                     <p className="font-mono text-[10px] text-gray-400 mt-2">
                                         *Referral supports your local community.
                                     </p>
                                 </div>
 
-                                {/* Mock Payment Method */}
-                                <div className="opacity-50 pointer-events-none grayscale">
-                                    <label className="font-mono text-xs font-bold text-gray-400 block mb-2">PAYMENT METHOD (SECURE)</label>
-                                    <div className="border-2 border-gray-200 p-4 flex items-center gap-4 bg-gray-50">
-                                        <CreditCard className="w-6 h-6 text-gray-400" />
-                                        <span className="font-mono text-sm text-gray-500">•••• •••• •••• 4242</span>
-                                        <span className="font-mono text-xs text-brand-blue ml-auto font-bold">VISA</span>
+                                <div>
+                                    <label className="font-mono text-xs font-bold text-brand-blue block mb-2">PAYMENT METHOD</label>
+
+                                    <div className="flex gap-2 mb-4">
+                                        <button
+                                            onClick={() => setPaymentMethod('card')}
+                                            className={`flex-1 p-3 border-2 font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${paymentMethod === 'card' ? 'border-brand-charcoal bg-white text-brand-charcoal' : 'border-gray-200 text-gray-400 bg-gray-50'}`}
+                                        >
+                                            <CreditCard className="w-4 h-4" /> Credit Card
+                                        </button>
+                                        <button
+                                            onClick={() => setPaymentMethod('promptpay')}
+                                            className={`flex-1 p-3 border-2 font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${paymentMethod === 'promptpay' ? 'border-brand-blue bg-white text-brand-blue' : 'border-gray-200 text-gray-400 bg-gray-50'}`}
+                                        >
+                                            <span className="text-[10px]">฿</span> PromptPay
+                                        </button>
                                     </div>
+
+                                    {paymentMethod === 'card' ? (
+                                        <div className="opacity-50 pointer-events-none grayscale border-2 border-gray-200 p-4 flex items-center gap-4 bg-gray-50 animate-reveal">
+                                            <CreditCard className="w-6 h-6 text-gray-400" />
+                                            <span className="font-mono text-sm text-gray-500">•••• •••• •••• 4242</span>
+                                            <span className="font-mono text-xs text-brand-blue ml-auto font-bold">VISA</span>
+                                        </div>
+                                    ) : (
+                                        <div className="border-2 border-brand-blue p-6 bg-white text-center animate-reveal relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 bg-brand-blue text-white text-[10px] font-bold px-2 py-1">THAI QR PAYMENT</div>
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c5/PromptPay-logo.png" className="h-6 mx-auto mb-4 opacity-80" alt="PromptPay" />
+                                            <div className="w-40 h-40 bg-white mx-auto mb-4 p-2 border-2 border-brand-charcoal flex items-center justify-center">
+                                                <QRCodeSVG
+                                                    value={generatePayload(dynamicPromptPayNumber, { amount: calculateTotal() })}
+                                                    size={140}
+                                                    level="L"
+                                                />
+                                            </div>
+                                            <p className="font-mono text-sm font-bold text-brand-charcoal mb-1">
+                                                Total: ฿{calculateTotal().toLocaleString()}
+                                            </p>
+                                            <p className="font-mono text-[10px] text-gray-500">
+                                                Scan using any Banking App
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex gap-4">

@@ -110,7 +110,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ user, gyms, updateGym, 
             // For now, let's just update local stat via prop to reflect immediately.
         } catch (err) {
             console.error(err);
-            alert("Failed to save gym");
+            alert("Failed to save gym. Please check your connection and try again.");
         }
     };
 
@@ -270,7 +270,8 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ user, gyms, updateGym, 
                                     }}>
                                         <div className="grid grid-cols-2 gap-4">
                                             <input className="border p-2 text-xs w-full" value={editingGym?.name} onChange={e => setEditingGym({ ...editingGym, name: e.target.value })} placeholder="Gym Name" />
-                                            <input className="border p-2 text-xs w-full" value={editingGym?.basePrice} onChange={e => setEditingGym({ ...editingGym, basePrice: Number(e.target.value) })} placeholder="Price" />
+                                            <input className="border p-2 text-xs w-full" type="number" value={editingGym?.basePrice ?? ''} onChange={e => setEditingGym({ ...editingGym, basePrice: Number(e.target.value) })} placeholder="Base Price (THB)" title="Price per session" />
+                                            <input className="border p-2 text-xs w-full" type="number" value={editingGym?.affiliatePercentage ?? ''} onChange={e => setEditingGym({ ...editingGym, affiliatePercentage: Number(e.target.value) })} placeholder="Affiliate Share %" title="Percentage for affiliates" />
                                         </div>
                                         <div className="grid grid-cols-1 gap-4">
                                             <input className="border p-2 text-xs w-full" value={editingGym?.location} onChange={e => setEditingGym({ ...editingGym, location: e.target.value })} placeholder="Location" />

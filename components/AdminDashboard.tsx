@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus, Calendar, Clock, BookOpen, Layers } from 'lucide-react';
 import { USERS } from '../lib/auth-data';
 import { Booking, AffiliateApplication, Announcement, Gym, Trainer, TrainerSchedule, User, Course } from '../lib/types';
-import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer, getTrainerSchedules, createTrainerSchedule, deleteTrainerSchedule, getAllUsers, getCourses, createCourse, updateCourse, deleteCourse } from '../services/dataService';
+import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer, getTrainerSchedules, createTrainerSchedule, deleteTrainerSchedule, getAllUsers, getCourses, createCourse, updateCourse, deleteCourse, getSystemSetting, updateSystemSetting, updateUserRole } from '../services/dataService';
 
 interface AdminDashboardProps {
   bookings: Booking[];
@@ -34,6 +34,19 @@ const Mono: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
   </span>
 );
 
+const DashboardContainer: React.FC<{ title: string; subtitle: string; children: React.ReactNode }> = ({ title, subtitle, children }) => (
+  <div className="max-w-[1440px] mx-auto px-4 sm:px-10 py-12 animate-reveal">
+    <div className="mb-12 border-b-2 border-brand-charcoal pb-6 flex justify-between items-end">
+      <div>
+        <Mono className="text-brand-blue">{subtitle}</Mono>
+        <h1 className="text-4xl font-black uppercase text-brand-charcoal mt-2">{title}</h1>
+      </div>
+      <div className="hidden md:block w-20 h-2 bg-brand-red"></div>
+    </div>
+    {children}
+  </div>
+);
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications, handleApprove }) => {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [users, setUsers] = useState<User[]>([]); // New state for users
@@ -62,8 +75,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
   const [isCourseFormOpen, setIsCourseFormOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Partial<Course>>({ designData: { modules: [] } });
 
+  // Settings State
+  const [promptPayNumber, setPromptPayNumber] = useState("");
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'overview' | 'gyms' | 'users' | 'announcements' | 'bookings' | 'courses' | 'settings'>('overview');
+
   useEffect(() => {
-    loadNews();
+    const loadSettings = async () => {
+      const number = await getSystemSetting('promptpay_number');
+      if (number) setPromptPayNumber(number);
+    };
+
+    loadSettings();
+    loadAnnouncements();
     loadGyms();
     loadUsers();
     loadCourses();
@@ -155,7 +181,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
       await loadGyms();
     } catch (err) {
       console.error(err);
-      alert("Failed to save gym");
+      alert("Failed to save gym. Please check your connection and try again.");
     }
   };
 
@@ -241,7 +267,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
     }
   };
 
-  const loadNews = async () => {
+  const handleSaveSettings = async () => {
+    setIsSettingsLoading(true);
+    try {
+      await updateSystemSetting('promptpay_number', promptPayNumber);
+      alert("Settings saved successfully");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save settings");
+    } finally {
+      setIsSettingsLoading(false);
+    }
+  };
+
+  const loadAnnouncements = async () => { // Rename legacy loadNews
     const data = await getAnnouncements();
     setAnnouncements(data);
   };
@@ -253,7 +292,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
       await createAnnouncement(newsTitle, newsContent);
       setNewsTitle("");
       setNewsContent("");
-      await loadNews();
+      await loadAnnouncements();
     } catch (err) {
       console.error(err);
       alert("Failed to post news");
@@ -266,9 +305,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
     if (!confirm("Delete this news item?")) return;
     try {
       await deleteAnnouncement(id);
-      await loadNews();
+      await loadAnnouncements();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    if (!confirm(`Are you sure you want to change this user's role to ${newRole}?`)) return;
+    try {
+      await updateUserRole(userId, newRole);
+      // Refresh users list
+      const updatedUsers = await getAllUsers();
+      setUsers(updatedUsers);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update role");
     }
   };
 
@@ -489,9 +542,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                           className="border p-2 font-mono text-xs bg-white w-full"
                           placeholder="Base Price (THB)"
                           type="number"
-                          value={editingGym?.basePrice || ''}
+                          value={editingGym?.basePrice ?? ''}
                           onChange={e => setEditingGym({ ...editingGym, basePrice: Number(e.target.value) })}
+                          title="Price per session (Standard)"
                           required
+                        />
+                        <input
+                          className="border p-2 font-mono text-xs bg-white w-full"
+                          placeholder="Affiliate Share % (e.g. 10)"
+                          type="number"
+                          value={editingGym?.affiliatePercentage ?? ''}
+                          onChange={e => setEditingGym({ ...editingGym, affiliatePercentage: Number(e.target.value) })}
+                          title="Percentage of revenue shared with affiliates"
                         />
 
                       </div>
@@ -866,7 +928,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                         <div className="font-bold text-brand-charcoal truncate" title={user.name}>{user.name}</div>
                         <div className="text-gray-400 truncate" title={user.email}>{user.email}</div>
                       </td>
-                      <td className="p-4 uppercase text-gray-600">{user.role}</td>
+
+                      <td className="p-4 uppercase text-gray-600">
+                        <select
+                          value={user.role}
+                          onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                          className="bg-transparent border-b border-gray-300 font-mono text-xs uppercase focus:outline-none focus:border-brand-blue"
+                        >
+                          <option value="customer">Customer</option>
+                          <option value="owner">Owner</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </td>
                       <td className="p-4 text-right">
                         <span className={`px - 2 py - 1 border ${user.affiliateStatus === 'active' ? 'border-green-600 text-green-700 bg-green-50' :
                           user.affiliateStatus === 'pending' ? 'border-brand-blue text-brand-blue bg-blue-50' : 'border-gray-200 text-gray-400'
@@ -925,8 +998,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
             <p className="animate-pulse truncate">&gt; [MONITOR] Watching for new bookings...</p>
           </div>
         </div>
-      </div>
-    </div>
+        {
+          activeTab === 'settings' && (
+            <DashboardContainer title="System Settings" subtitle="Configuration">
+              <div className="max-w-xl">
+                <BlockTable title="Payment Configuration" icon={<DollarSign className="w-4 h-4" />}>
+                  <div className="p-8 space-y-6">
+                    <div>
+                      <label className="font-mono text-xs font-bold text-brand-blue block mb-2 uppercase">PromptPay Number</label>
+                      <input
+                        type="text"
+                        value={promptPayNumber}
+                        onChange={(e) => setPromptPayNumber(e.target.value)}
+                        className="w-full border-2 border-brand-charcoal p-3 font-mono text-lg"
+                        placeholder="08X-XXX-XXXX"
+                      />
+                      <p className="mt-2 font-mono text-xs text-gray-400">
+                        This number will be used to generate dynamic QR codes for payments.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleSaveSettings}
+                      disabled={isSettingsLoading}
+                      className="bg-brand-charcoal text-white font-bold uppercase py-3 px-8 hover:bg-brand-red transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]"
+                    >
+                      {isSettingsLoading ? 'Saving...' : 'Save Configuration'}
+                    </button>
+                  </div>
+                </BlockTable>
+              </div>
+            </DashboardContainer>
+          )
+        }
+
+      </div >
+    </div >
   );
 };
 
