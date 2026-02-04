@@ -35,6 +35,7 @@ const Navbar: React.FC<NavbarProps> = ({ activeUser, onLogout }) => {
           <div className="hidden md:flex gap-10">
             <a href="/#gyms" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Gyms</a>
             <a href="/#gyms" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Camps</a>
+            <Link to="/shop" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Shop</Link>
             {activeUser && (
               <>
                 <Link
@@ -44,12 +45,20 @@ const Navbar: React.FC<NavbarProps> = ({ activeUser, onLogout }) => {
                   Dashboard
                 </Link>
                 {(activeUser.role === 'admin' || activeUser.role === 'owner') && (
-                  <Link
-                    to="/analytics"
-                    className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors"
-                  >
-                    Analytics
-                  </Link>
+                  <>
+                    <Link
+                      to="/analytics"
+                      className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors"
+                    >
+                      Analytics
+                    </Link>
+                    <Link
+                      to="/shop-admin"
+                      className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors"
+                    >
+                      Shop
+                    </Link>
+                  </>
                 )}
               </>
             )}

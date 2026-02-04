@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus, Calendar, Clock, BookOpen, Layers } from 'lucide-react';
+import { Shield, Check, X, Users, DollarSign, Activity, Megaphone, Trash2, Edit, Plus, UserPlus, Calendar, Clock, BookOpen, Layers, ShoppingBag, Package } from 'lucide-react';
 import { USERS } from '../lib/auth-data';
-import { Booking, AffiliateApplication, Announcement, Gym, Trainer, TrainerSchedule, User, Course } from '../lib/types';
+import { Booking, AffiliateApplication, Announcement, Gym, Trainer, TrainerSchedule, User, Course, Product } from '../lib/types';
 import { createAnnouncement, deleteAnnouncement, getAnnouncements, createGym, updateGym, deleteGym, getGyms, createTrainer, deleteTrainer, getTrainerSchedules, createTrainerSchedule, deleteTrainerSchedule, getAllUsers, getCourses, createCourse, updateCourse, deleteCourse, getSystemSetting, updateSystemSetting, updateUserRole } from '../services/dataService';
+import { getProducts, createProduct, updateProduct, deleteProduct } from '../services/shopService';
+import ProductManagement from './ProductManagement';
 
 interface AdminDashboardProps {
   bookings: Booking[];
@@ -79,8 +81,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
   const [promptPayNumber, setPromptPayNumber] = useState("");
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
 
+  // Shop/Product State
+  const [products, setProducts] = useState<Product[]>([]);
+  const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+  const [isProductFormOpen, setIsProductFormOpen] = useState(false);
+
   // Tabs
-  const [activeTab, setActiveTab] = useState<'overview' | 'gyms' | 'users' | 'announcements' | 'bookings' | 'courses' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'gyms' | 'users' | 'announcements' | 'bookings' | 'courses' | 'shop' | 'settings'>('overview');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -93,6 +100,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
     loadGyms();
     loadUsers();
     loadCourses();
+    loadProducts();
   }, []);
 
   const loadCourses = async () => {
@@ -324,6 +332,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
       alert("Failed to update role");
     }
   };
+
+  // --- Product Management Functions ---
+  const loadProducts = async () => {
+    const data = await getProducts();
+    setProducts(data);
+  };
+
+  const handleSaveProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    try {
+      if (editingProduct.id) {
+        await updateProduct(editingProduct.id, editingProduct);
+      } else {
+        await createProduct(editingProduct as Omit<Product, 'id' | 'createdAt'>);
+      }
+      await loadProducts();
+      setIsProductFormOpen(false);
+      setEditingProduct(null);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save product");
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (!confirm("Delete this product?")) return;
+    try {
+      await deleteProduct(id);
+      await loadProducts();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete product");
+    }
+  };
+
 
   const totalRevenue = bookings.reduce((sum, b) => sum + b.totalPrice, 0);
   const totalCommission = bookings.reduce((sum, b) => sum + b.commissionAmount, 0);
@@ -987,6 +1032,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
               </div>
             )}
           </BlockTable>
+
+          {/* Shop Management Navigation */}
+          <div className="bg-white border-2 border-brand-charcoal p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-[8px_8px_0px_0px_#AE3A17] group hover:bg-brand-bone transition-all duration-300">
+            <div>
+              <h3 className="text-2xl font-black uppercase text-brand-charcoal mb-2 flex items-center gap-2">
+                <ShoppingBag className="w-6 h-6 text-brand-blue" />
+                E-Commerce Management
+              </h3>
+              <p className="font-mono text-xs text-gray-600">
+                Manage products, inventory, orders, and shop settings.
+              </p>
+            </div>
+            <a
+              href="#/shop-admin"
+              className="px-8 py-4 bg-brand-charcoal text-white font-black uppercase text-sm border-2 border-brand-charcoal hover:bg-brand-blue hover:border-brand-blue transition-all whitespace-nowrap"
+            >
+              Open Shop Admin
+            </a>
+          </div>
 
           {/* System Logs (Static) */}
           <div className="bg-brand-charcoal text-gray-400 p-6 border-2 border-brand-charcoal font-mono text-[10px] space-y-2 overflow-hidden shadow-[8px_8px_0px_0px_#AE3A17]">

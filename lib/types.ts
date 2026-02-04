@@ -92,3 +92,47 @@ export interface Course {
   imageUrl?: string;
   isActive: boolean;
 }
+
+// --- SHOP TYPES ---
+
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  imageUrl?: string;
+  stockStatus: 'in_stock' | 'low_stock' | 'out_of_stock' | 'pre_order';
+  isFeatured: boolean;
+  createdAt?: string;
+}
+
+export interface CartItem extends Product {
+  quantity: number;
+}
+
+export interface ShopOrder {
+  id: string;
+  userId: string;
+  totalAmount: number;
+  status: 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled';
+  shippingAddress?: string;
+  contactDetails?: string;
+  paymentMethod?: string;
+  stripeSessionId?: string;
+  stripePaymentIntentId?: string;
+  paymentStatus?: string;
+  paymentVerifiedAt?: string;
+  adminNotes?: string;
+  createdAt: string;
+  items?: ShopOrderItem[];
+}
+
+export interface ShopOrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  productName?: string;
+  quantity: number;
+  priceAtPurchase: number;
+}

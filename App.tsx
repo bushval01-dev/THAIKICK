@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { Square, TrendingUp } from 'lucide-react';
+import { Square, TrendingUp, ShoppingBag } from 'lucide-react';
 
 import AffiliateTracker from './components/AffiliateTracker';
 import Navbar from './components/Navbar';
@@ -11,6 +11,10 @@ import OwnerDashboard from './components/OwnerDashboard'; // Import new componen
 import AnalyticsDashboard from './components/AnalyticsDashboard'; // New Import
 import BookingPage from './components/BookingPage';
 import ResetPasswordPage from './components/ResetPasswordPage';
+import ShopAdminPage from './components/ShopAdminPage';
+import ShopPage from './components/ShopPage';
+import CheckoutPage from './components/CheckoutPage';
+import CheckoutSuccessPage from './components/CheckoutSuccessPage';
 
 import { BOOKINGS, AFFILIATE_APPLICATIONS } from './lib/data';
 import { USERS } from './lib/auth-data';
@@ -251,6 +255,117 @@ const BlockTable: React.FC<{ title: string; children: React.ReactNode }> = ({ ti
 );
 
 
+// Shop Orders Section Component
+const ShopOrdersSection: React.FC<{ userId: string }> = ({ userId }) => {
+  const [orders, setOrders] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    loadUserOrders();
+  }, [userId]);
+
+  const loadUserOrders = async () => {
+    try {
+      const { getShopOrdersByUser } = await import('./services/shopService');
+      const data = await getShopOrdersByUser(userId);
+      setOrders(data);
+    } catch (error) {
+      console.error('Failed to load orders', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-700';
+      case 'paid': return 'bg-blue-100 text-blue-700';
+      case 'shipped': return 'bg-purple-100 text-purple-700';
+      case 'delivered': return 'bg-green-100 text-green-700';
+      case 'cancelled': return 'bg-red-100 text-red-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  if (loading) {
+    return <div className="p-12 text-center font-mono text-sm text-gray-400">LOADING ORDERS...</div>;
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="p-12 text-center">
+        <ShoppingBag className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+        <div className="font-mono text-sm text-gray-400">NO ORDERS YET</div>
+        <a href="#/shop" className="inline-block mt-4 text-brand-blue hover:text-brand-red font-mono text-xs uppercase underline">Browse Shop</a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y-2 divide-gray-100">
+      {orders.map(order => {
+        const contactDetails = order.contactDetails ? JSON.parse(order.contactDetails) : {};
+        return (
+          <div key={order.id} className="p-6 hover:bg-brand-bone transition-colors">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <div className="font-mono text-xs text-gray-400">Order #{order.id.slice(0, 8)}</div>
+                <div className="font-mono text-sm text-gray-600 mt-1">
+                  {new Date(order.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xl font-black">฿{order.totalAmount.toLocaleString()}</div>
+                <span className={`inline-block px-2 py-1 text-xs font-bold uppercase mt-1 ${getStatusColor(order.status)}`}>
+                  {order.status}
+                </span>
+              </div>
+            </div>
+            {order.items && order.items.length > 0 && (
+              <div className="bg-gray-50 p-3 space-y-1">
+                {order.items.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between font-mono text-xs text-gray-600">
+                    <span>{item.quantity}x Product</span>
+                    <span>฿{item.priceAtPurchase.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {order.status === 'pending' && order.paymentStatus !== 'paid' && (
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-[10px] font-mono text-amber-600 uppercase font-bold">
+                  <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                  Payment Pending
+                </div>
+                {order.stripeSessionId && (
+                  <button
+                    onClick={() => {
+                      // Attempt to redirect if we have a session ID
+                      // In a real app, you might want to call the edge function to get a fresh URL
+                      alert('Please complete the payment on the Stripe page.');
+                    }}
+                    className="w-full bg-brand-charcoal text-white py-2 px-4 font-mono text-xs uppercase hover:bg-brand-blue transition-colors"
+                  >
+                    💳 Complete Stripe Payment
+                  </button>
+                )}
+              </div>
+            )}
+
+            {order.status === 'paid' && (
+              <div className="mt-3 flex items-center gap-2 text-[10px] font-mono text-green-600 uppercase font-bold">
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                Payment Verified
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const CustomerDashboard: React.FC<{ user: User; bookings: Booking[]; requestAffiliate: () => void }> = ({ user, bookings, requestAffiliate }) => {
   // Filter bookings for this user
   const myBookings = bookings.filter(b => b.userId === user.id);
@@ -331,6 +446,11 @@ const CustomerDashboard: React.FC<{ user: User; bookings: Booking[]; requestAffi
                 ))}
               </div>
             )}
+          </BlockTable>
+
+          {/* Section 3: Shop Orders */}
+          <BlockTable title="My Shop Orders" icon={<ShoppingBag className="w-4 h-4" />}>
+            <ShopOrdersSection userId={user.id} />
           </BlockTable>
 
         </div>
@@ -454,11 +574,16 @@ const App: React.FC = () => {
     fetchGyms();
 
     // 2. Auth Logic (Merged)
-    const handleUserUpdate = async (session: any) => {
+    const handleUserUpdate = async (session: any, forceUpdate = false) => {
       if (!session?.user) {
-        if (mounted) {
+        // Don't clear user state unless it's a forced update (actual logout)
+        // This prevents clearing state during token refresh
+        if (forceUpdate && mounted) {
           setActiveUser(null);
           setBookings([]);
+          setIsAuthChecking(false);
+        } else if (mounted) {
+          // Just mark auth checking as done, keep existing user
           setIsAuthChecking(false);
         }
         return;
@@ -475,7 +600,13 @@ const App: React.FC = () => {
         affiliateStatus: 'none'
       };
 
-      if (mounted) {
+      // Only set basicUser if we don't have an activeUser yet (initial load)
+      // This prevents role flickering when tab regains focus
+      if (mounted && !activeUser) {
+        setActiveUser(basicUser);
+        setupProfileSubscription(session.user.id);
+      } else if (mounted && activeUser.id !== session.user.id) {
+        // Different user logged in, update
         setActiveUser(basicUser);
         setupProfileSubscription(session.user.id);
       }
@@ -528,8 +659,14 @@ const App: React.FC = () => {
     });
 
     // Listen for changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      handleUserUpdate(session);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Only handle significant auth events, ignore token refresh
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'PASSWORD_RECOVERY') {
+        handleUserUpdate(session, false);
+      } else if (event === 'SIGNED_OUT') {
+        handleUserUpdate(session, true); // Force clear on logout
+      }
+      // TOKEN_REFRESHED events are ignored to prevent unnecessary re-renders and redirects
     });
 
     // Clean up subscription
@@ -615,6 +752,10 @@ const App: React.FC = () => {
             <Route path="/admin" element={activeUser?.role === 'admin' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/admin" element={activeUser?.role === 'admin' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/analytics" element={(activeUser?.role === 'admin' || activeUser?.role === 'owner') ? <AnalyticsDashboard bookings={bookings} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
+            <Route path="/shop" element={<ShopPage />} />
+            <Route path="/checkout" element={<CheckoutPage user={activeUser} />} />
+            <Route path="/checkout-success" element={<CheckoutSuccessPage />} />
+            <Route path="/shop-admin" element={(activeUser?.role === 'admin' || activeUser?.role === 'owner') ? <ShopAdminPage /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
           </Routes>
         </main>
