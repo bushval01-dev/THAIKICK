@@ -33,6 +33,7 @@ export interface Gym {
   isFlashSale: boolean;
   flashSaleDiscount: number;
   affiliatePercentage?: number;
+  category: 'gym' | 'camp';
 }
 
 export interface Booking {

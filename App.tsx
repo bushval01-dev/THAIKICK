@@ -86,6 +86,7 @@ const GymCard: React.FC<{ gym: Gym; onBook: () => void; isLarge?: boolean }> = (
       </div>
 
       <Mono className="text-gray-500 block mb-2">{gym.location}</Mono>
+      <Mono className="text-brand-blue block mb-1 font-bold">{gym.category}</Mono>
       <h3 className="text-3xl font-black uppercase text-brand-charcoal mb-4 leading-none">{gym.name}</h3>
 
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -106,7 +107,7 @@ const GymCard: React.FC<{ gym: Gym; onBook: () => void; isLarge?: boolean }> = (
   </div>
 );
 
-const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> = ({ user, gyms, setBookings }) => {
+const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any; filterCategory?: 'gym' | 'camp' }> = ({ user, gyms, setBookings, filterCategory }) => {
   const navigate = useNavigate();
   const [announcements, setAnnouncements] = useState<any[]>([]);
 
@@ -126,7 +127,8 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
   const filteredGyms = gyms.filter(gym => {
     const matchLocation = gym.location.toLowerCase().includes(locationInput.toLowerCase()) || gym.name.toLowerCase().includes(locationInput.toLowerCase());
     const matchDiscipline = disciplineInput === '' || gym.trainers.some(t => t.specialty.toLowerCase().includes(disciplineInput.toLowerCase()));
-    return matchLocation && matchDiscipline;
+    const matchCategory = !filterCategory || gym.category === filterCategory;
+    return matchLocation && matchDiscipline && matchCategory;
   });
 
   return (
@@ -136,12 +138,13 @@ const HomePage: React.FC<{ user: User | null; gyms: Gym[]; setBookings: any }> =
         <div>
           <Mono className="text-brand-red block mb-6">Bangkok • Phuket • Chiang Mai</Mono>
           <h1 className="text-[clamp(3.5rem,8vw,8rem)] font-black text-brand-charcoal leading-[0.9] tracking-tight">
-            FORGE YOUR<br /><span className="text-brand-red">LEGACY.</span>
+            {filterCategory === 'camp' ? 'ELITE TRAINING' : 'FORGE YOUR'}<br /><span className="text-brand-red">{filterCategory === 'camp' ? 'CAMPS.' : 'LEGACY.'}</span>
           </h1>
         </div>
         <div className="font-mono text-sm leading-relaxed border-l-2 border-brand-blue pl-8 text-brand-charcoal opacity-80 mb-4 lg:mb-0">
-          The world's most curated platform for authentic Muay Thai training.
-          From backyard rings to world-class stadiums.
+          {filterCategory === 'camp'
+            ? "Authentic Thai camps for long-term growth. Stay, train, and immerse yourself in the art."
+            : "The world's most curated platform for authentic Muay Thai training. From backyard rings to world-class stadiums."}
         </div>
       </div>
 
@@ -746,6 +749,8 @@ const App: React.FC = () => {
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
+            <Route path="/gyms" element={<HomePage user={activeUser} gyms={gyms} setBookings={setBookings} filterCategory="gym" />} />
+            <Route path="/camps" element={<HomePage user={activeUser} gyms={gyms} setBookings={setBookings} filterCategory="camp" />} />
             <Route path="/booking/:gymId" element={<BookingPage gyms={gyms} user={activeUser} setBookings={setBookings} />} />
             <Route path="/dashboard" element={activeUser?.role === 'customer' ? <CustomerDashboard user={activeUser} bookings={bookings} requestAffiliate={handleAffiliateRequest} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />
             <Route path="/owner" element={activeUser?.role === 'owner' ? <AdminDashboard bookings={bookings} applications={applications} handleApprove={handleAffiliateApproval} /> : <HomePage user={activeUser} gyms={gyms} setBookings={setBookings} />} />

@@ -600,7 +600,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                           onChange={e => setEditingGym({ ...editingGym, affiliatePercentage: Number(e.target.value) })}
                           title="Percentage of revenue shared with affiliates"
                         />
-
+                        <select
+                          className="border border-brand-blue/30 p-2 font-mono text-xs bg-blue-50 w-full font-bold text-brand-blue"
+                          value={editingGym?.category || 'gym'}
+                          onChange={e => setEditingGym({ ...editingGym, category: e.target.value as 'gym' | 'camp' })}
+                          required
+                        >
+                          <option value="gym">📍 TYPE: GYM (URBAN)</option>
+                          <option value="camp">🏕️ TYPE: CAMP (RESORT)</option>
+                        </select>
                       </div>
                       <textarea
                         className="border p-2 font-mono text-xs bg-white w-full h-16 mt-2"
@@ -698,6 +706,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ bookings, applications,
                     </div>
                     <div>
                       <div className="font-bold text-sm uppercase text-brand-charcoal">{g.name}</div>
+                      <div className="font-mono text-[10px] text-brand-blue uppercase font-bold">{g.category}</div>
                       <div className="font-mono text-xs text-gray-400">{g.location} • ฿{g.basePrice}</div>
                     </div>
                   </div>

@@ -38,7 +38,8 @@ export const getGyms = async (): Promise<Gym[]> => {
         })),
         isFlashSale: gym.is_flash_sale,
         flashSaleDiscount: gym.flash_sale_discount,
-        affiliatePercentage: gym.affiliate_percentage
+        affiliatePercentage: gym.affiliate_percentage,
+        category: gym.category || 'gym'
     })) as unknown as Gym[];
 };
 
@@ -74,7 +75,8 @@ export const getGymById = async (id: string): Promise<Gym | null> => {
         })),
         isFlashSale: data.is_flash_sale,
         flashSaleDiscount: data.flash_sale_discount,
-        affiliatePercentage: data.affiliate_percentage
+        affiliatePercentage: data.affiliate_percentage,
+        category: data.category || 'gym'
     } as unknown as Gym;
 };
 
@@ -87,7 +89,8 @@ export const createGym = async (gym: Partial<Gym>) => {
         images: gym.images || [],
         base_price: gym.basePrice ?? 0,
         owner_id: gym.ownerId, // Optional, might be null for admin created
-        affiliate_percentage: gym.affiliatePercentage || 0
+        affiliate_percentage: gym.affiliatePercentage || 0,
+        category: gym.category || 'gym'
     };
 
     const { data, error } = await supabase
@@ -108,6 +111,7 @@ export const updateGym = async (id: string, gym: Partial<Gym>) => {
     if (gym.images) dbGym.images = gym.images;
     if (gym.basePrice !== undefined) dbGym.base_price = gym.basePrice;
     if (gym.affiliatePercentage !== undefined) dbGym.affiliate_percentage = gym.affiliatePercentage;
+    if (gym.category) dbGym.category = gym.category;
 
     // Safety check just in case
     if (Object.keys(dbGym).length === 0) return;

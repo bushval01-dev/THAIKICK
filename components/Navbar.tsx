@@ -33,8 +33,8 @@ const Navbar: React.FC<NavbarProps> = ({ activeUser, onLogout }) => {
 
           {/* Center Links (Desktop) */}
           <div className="hidden md:flex gap-10">
-            <a href="/#gyms" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Gyms</a>
-            <a href="/#gyms" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Camps</a>
+            <Link to="/gyms" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Gyms</Link>
+            <Link to="/camps" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Camps</Link>
             <Link to="/shop" className="font-mono text-xs uppercase tracking-widest text-brand-charcoal hover:text-brand-red transition-colors">Shop</Link>
             {activeUser && (
               <>
